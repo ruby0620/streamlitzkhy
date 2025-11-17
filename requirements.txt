@@ -7,4 +7,5 @@ plotly
 Pillow
 openpyxl
 opencv-python-headless
+scipy
 
