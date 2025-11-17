@@ -1,0 +1,284 @@
+{
+  "version": "1.0",
+  "description": "缺陷分类规则配置文件",
+  "available_features": [
+    "DW1O_MaxOrg", "DW1O_TotalSNR", "DW1O_MeanOrg", "DW1O_Width", "DW1O_ApproxValueRaws",
+    "DW1O_MainRowGaussFitR2", "DW1O_SubRow1GaussFitR2", "DW1O_MainRowSNR", "DW1O_MainRowMean",
+    "DW1O_SubRow1Mean", "DW1O_PeakToBG10MeanDiff", "DW1O_UpRowCount", "DW1O_DownRowCount",
+    "DW1O_BGMax", "DW1O_BGDev", "DW1O_BGT2Mean", "DW1O_BGMean", "DW1O_Height",
+    "DW2O_MaxOrg", "DW2O_TotalSNR", "DW2O_MeanOrg", "DW2O_ApproxValueRaws",
+    "DW2O_MainRowGaussFitR2", "DW2O_MainRowSNR", "DW2O_MainRowMean", "DW2O_BGMax",
+    "DW2O_Width", "DW2O_Height",
+    "DN1O_MaxOrg", "DN1O_TotalSNR", "DN1O_MeanOrg", "DN1O_Width", "DN1O_ApproxValueRaws",
+    "DN1O_MainRowGaussFitR2", "DN1O_SubRow1GaussFitR2", "DN1O_BGMax", "DN1O_Height"
+  ],
+  "rules": [
+    {
+      "rule_id": 1,
+      "name": "DN1O饱和检测-高强度",
+      "conditions": [
+        {"feature": "DN1O_MaxOrg", "operator": ">=", "value": 65532},
+        {"feature": "DN1O_Height", "operator": ">=", "value": 10}
+      ],
+      "logic": "AND",
+      "return_value": 206,
+      "enabled": true
+    },
+    {
+      "rule_id": 2,
+      "name": "DN1O饱和检测-低高度",
+      "conditions": [
+        {"feature": "DN1O_MaxOrg", "operator": ">=", "value": 65532},
+        {"feature": "DN1O_Height", "operator": "<=", "value": 3}
+      ],
+      "logic": "AND",
+      "return_value": 200,
+      "enabled": true
+    },
+    {
+      "rule_id": 3,
+      "name": "DN1O饱和检测-中等高度",
+      "conditions": [
+        {"feature": "DN1O_MaxOrg", "operator": ">=", "value": 65532},
+        {"feature": "DN1O_Height", "operator": "<=", "value": 9},
+        {"feature": "DN1O_Height", "operator": ">=", "value": 4}
+      ],
+      "logic": "AND",
+      "return_value": 201,
+      "enabled": true
+    },
+    {
+      "rule_id": 4,
+      "name": "半径过大检测",
+      "conditions": [
+        {"feature": "DW1O_ApproxValueRaws", "operator": ">=", "value": 147},
+        {"feature": "DW2O_ApproxValueRaws", "operator": ">=", "value": 147},
+        {"feature": "DN1O_ApproxValueRaws", "operator": ">=", "value": 147}
+      ],
+      "logic": "OR",
+      "return_value": 10001,
+      "enabled": true
+    },
+    {
+      "rule_id": 5,
+      "name": "宽度过大检测",
+      "conditions": [
+        {"feature": "DW1O_Width", "operator": ">=", "value": 450},
+        {"feature": "DW2O_Width", "operator": ">=", "value": 450},
+        {"feature": "DN1O_Width", "operator": ">=", "value": 450}
+      ],
+      "logic": "OR",
+      "return_value": 10001,
+      "enabled": true
+    },
+    {
+      "rule_id": 6,
+      "name": "D通道单独-高SNR",
+      "channel_combination": "D_only",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 15.5, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 7,
+      "name": "J通道单独-高SNR",
+      "channel_combination": "J_only",
+      "conditions": [
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 15, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 8,
+      "name": "P通道单独-高SNR",
+      "channel_combination": "P_only",
+      "conditions": [
+        {"feature": "DN1O_TotalSNR", "operator": ">", "value": 20, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 9,
+      "name": "DJ组合-规则1",
+      "channel_combination": "D_and_J",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 19, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 6, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 10,
+      "name": "DJ组合-规则2",
+      "channel_combination": "D_and_J",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 16, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 8, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 11,
+      "name": "DJ组合-规则3",
+      "channel_combination": "D_and_J",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 15, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 9, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 12,
+      "name": "DJ组合-规则4",
+      "channel_combination": "D_and_J",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 12, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 10, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 13,
+      "name": "DJ组合-规则5",
+      "channel_combination": "D_and_J",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 10, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 12, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 14,
+      "name": "DJ组合-J高SNR",
+      "channel_combination": "D_and_J",
+      "conditions": [
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 15, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 15,
+      "name": "DJP组合-规则1",
+      "channel_combination": "D_and_J_and_P",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 15, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 8, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 16,
+      "name": "DJP组合-规则2",
+      "channel_combination": "D_and_J_and_P",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 13, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 16, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 17,
+      "name": "DJP组合-规则3",
+      "channel_combination": "D_and_J_and_P",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 20, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 13, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 18,
+      "name": "DJP组合-规则4",
+      "channel_combination": "D_and_J_and_P",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 22, "use_threshold": true},
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 7, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 19,
+      "name": "DP组合-高SNR",
+      "channel_combination": "D_and_P",
+      "conditions": [
+        {"feature": "DW1O_TotalSNR", "operator": ">", "value": 25, "use_threshold": true},
+        {"feature": "DN1O_TotalSNR", "operator": ">", "value": 7, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 20,
+      "name": "JP组合-低SNR过杀",
+      "channel_combination": "J_and_P",
+      "conditions": [
+        {"feature": "DN1O_TotalSNR", "operator": "<", "value": 6},
+        {"feature": "DW2O_TotalSNR", "operator": "<", "value": 6}
+      ],
+      "logic": "AND",
+      "return_value": 1000,
+      "enabled": true
+    },
+    {
+      "rule_id": 21,
+      "name": "JP组合-高SNR",
+      "channel_combination": "J_and_P",
+      "conditions": [
+        {"feature": "DW2O_TotalSNR", "operator": ">", "value": 13, "use_threshold": true},
+        {"feature": "DN1O_TotalSNR", "operator": ">", "value": 8, "use_threshold": true}
+      ],
+      "logic": "AND",
+      "return_value": 0,
+      "enabled": true
+    },
+    {
+      "rule_id": 22,
+      "name": "复杂逻辑示例-多通道高SNR",
+      "description": "示例: 1 && (2 || 3 || 4) && (!5) 表示条件1成立 AND (条件2 OR 条件3 OR 条件4) AND (NOT 条件5)",
+      "conditions": [
+        {"condition_id": 1, "feature": "DW1O_TotalSNR", "operator": ">", "value": 18, "use_threshold": true},
+        {"condition_id": 2, "feature": "DW2O_TotalSNR", "operator": ">", "value": 18, "use_threshold": true},
+        {"condition_id": 3, "feature": "DN1O_TotalSNR", "operator": ">", "value": 18, "use_threshold": true},
+        {"condition_id": 4, "feature": "DW1O_TotalSNR", "operator": ">", "value": 4, "use_threshold": true},
+        {"condition_id": 5, "feature": "DW1O_ApproxValueRaws", "operator": ">", "value": 100, "use_threshold": false}
+      ],
+      "logic_expression": "(1 || 2 || 3) && 4 && (!5)",
+      "return_value": 0,
+      "enabled": true
+    }
+  ],
+  "default_return": 10002,
+  "thresholds": {
+    "snr_adjustment": -3,
+    "dw1o_peak_adjustment": -8000,
+    "dw2o_peak_adjustment": -8000
+  }
+}

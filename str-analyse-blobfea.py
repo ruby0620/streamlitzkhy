@@ -32,19 +32,15 @@ st.sidebar.markdown("---")
 # 主要功能模块
 st.sidebar.subheader("🔍 主要功能")
 st.sidebar.markdown("""
-- [📊 数据分析](#数据分析)
-- [🔗 坐标匹配](#坐标匹配)
+- [📁 过漏检分析](#过漏检分析)
 - [🖼️ 图像查看](#图像查看)
-- [🎯 晶圆缺陷图](#晶圆缺陷图)
-- [📁 多工况对比](#多工况对比)
 - [✂️ 区域过滤](#区域过滤)
-- [🔬 饱和像素分析](#饱和像素分析)
 """)
 
 st.sidebar.markdown("---")
 
-# 多工况对比子功能
-st.sidebar.subheader("📁 多工况对比功能")
+# 过漏检分析子功能
+st.sidebar.subheader("📁 过漏检分析功能")
 st.sidebar.markdown("""
 **文件夹对比：**
 - [🌐 多文件夹晶圆图](#多文件夹晶圆图)
@@ -69,940 +65,21 @@ st.sidebar.markdown("---")
 # 系统信息
 st.sidebar.subheader("ℹ️ 系统信息")
 st.sidebar.info("""
-**缺陷数据分析系统 v2.0**
+**缺陷数据分析系统 v3.0**
 
 支持功能：
-- Excel/CSV数据导入
-- 多维度特征分析
-- 坐标匹配与对比
+- 过漏检综合分析
 - TIFF图像查看
-- 多工况综合分析
+- 区域过滤
 """)
 
 # 主标题
 st.title("缺陷数据分析系统")
 
 # 创建标签页
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 数据分析", "🔗 坐标匹配", "🖼️ 图像查看", "🎯 晶圆缺陷图", "📁 多工况对比", "✂️ 区域过滤", "🔬 饱和像素分析"])
-
-with tab1:
-    st.markdown('<a name="数据分析"></a>', unsafe_allow_html=True)
-    st.header("📊 缺陷数据分析")
-    # 文件上传
-    uploaded_file = st.file_uploader("上传Excel或CSV文件", type=['xlsx', 'xls', 'csv'])
-
-if uploaded_file is not None:
-    try:
-        # 读取文件
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
-        
-        st.success(f"文件上传成功！数据形状: {df.shape}")
-        
-        # 数据清理：处理包含逗号分隔数值的字符串列
-        def clean_numeric_columns(df):
-            """清理数值列，处理包含逗号分隔数值的字符串"""
-            df_cleaned = df.copy()
-            
-            for col in df_cleaned.columns:
-                if df_cleaned[col].dtype == 'object':  # 字符串类型列
-                    # 检查是否包含逗号分隔的数值
-                    sample_vals = df_cleaned[col].dropna().head(10)
-                    if len(sample_vals) > 0:
-                        first_val = str(sample_vals.iloc[0])
-                        if ',' in first_val and not first_val.replace(',', '').replace('.', '').replace('-', '').isdigit():
-                            # 如果包含逗号但不是简单的数值，跳过转换
-                            continue
-                        elif ',' in first_val:
-                            try:
-                                # 尝试将逗号分隔的数值转换为浮点数（取第一个值）
-                                df_cleaned[col] = df_cleaned[col].astype(str).str.split(',').str[0]
-                                df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='ignore')
-                            except:
-                                continue
-            
-            return df_cleaned
-        
-        df = clean_numeric_columns(df)
-        
-        # 显示数据信息
-        with st.expander("数据概览"):
-            st.write("前5行数据:")
-            # 使用更安全的方式显示数据，避免Arrow序列化问题
-            try:
-                st.dataframe(df.head())
-            except:
-                # 如果仍有问题，转换所有object类型列为字符串
-                df_display = df.head().copy()
-                for col in df_display.columns:
-                    if df_display[col].dtype == 'object':
-                        df_display[col] = df_display[col].astype(str)
-                st.dataframe(df_display)
-            
-            st.write("列名:")
-            st.write(list(df.columns))
-        
-        # 数据预处理
-        @st.cache_data
-        def preprocess_data(df):
-            # 计算Excel列位置到索引的转换
-            def excel_col_to_index(col_name):
-                """将Excel列名转换为0-based索引"""
-                result = 0
-                for char in col_name:
-                    result = result * 26 + (ord(char) - ord('A') + 1)
-                return result - 1
-            
-            # 获取列名
-            columns = df.columns.tolist()
-            
-            # 找到相关列的索引
-            id_col = columns[0]  # A列 - ID
-            x_col = None
-            y_col = None
-            match_col = None
-            
-            # 通过列名查找坐标列
-            for col in columns:
-                if 'dCenterXCartisian' in col and 'Move' not in col:
-                    x_col = col
-                elif 'dCenterYCartisian' in col and 'Move' not in col:
-                    y_col = col
-            
-            # 如果找不到精确名称，通过Excel列位置查找
-            if x_col is None or y_col is None:
-                fy_index = excel_col_to_index('FY')  # FY列索引
-                fz_index = excel_col_to_index('FZ')  # FZ列索引
-                
-                if len(columns) > fy_index:
-                    x_col = columns[fy_index]
-                if len(columns) > fz_index:
-                    y_col = columns[fz_index]
-            
-            # 查找匹配结果列
-            # 优先查找名为"匹配结果"的列
-            match_col = None
-            for col in columns:
-                if col == '匹配结果':
-                    match_col = col
-                    break
-            
-            # 如果没找到精确匹配，尝试模糊匹配
-            if match_col is None:
-                for col in columns:
-                    if '匹配结果' in str(col) or 'match' in str(col).lower() or 'result' in str(col).lower():
-                        match_col = col
-                        break
-            
-            # 如果还没找到，通过GA列位置查找（作为备选）
-            if match_col is None:
-                ga_index = excel_col_to_index('GA')  # GA列索引
-                if len(columns) > ga_index:
-                    match_col = columns[ga_index]
-            
-            # 获取特征列的正确索引范围
-            j_index = excel_col_to_index('J')      # J列 = 索引9
-            bn_index = excel_col_to_index('BN')    # BN列 = 索引65
-            bo_index = excel_col_to_index('BO')    # BO列 = 索引66
-            ds_index = excel_col_to_index('DS')    # DS列 = 索引122
-            dt_index = excel_col_to_index('DT')    # DT列 = 索引123
-            fx_index = excel_col_to_index('FX')    # FX列 = 索引181
-            
-            # 获取特征列 - 改为通过特征名称范围确定
-            # DW1O通道: 从 DW1O_MaxOrg 到 DW1O_BlobSNR
-            dw1o_start_idx = None
-            dw1o_end_idx = None
-            for idx, col in enumerate(columns):
-                if 'DW1O_MaxOrg' in col:
-                    dw1o_start_idx = idx
-                if 'DW1O_BlobSNR' in col:
-                    dw1o_end_idx = idx
-            
-            if dw1o_start_idx is not None and dw1o_end_idx is not None:
-                dw1o_cols = columns[dw1o_start_idx:dw1o_end_idx+1]
-                dw1o_cols = [col for col in dw1o_cols if 'DW1O' in col]
-            else:
-                dw1o_cols = []
-            
-            # DW2O通道: 从 DW2O_MaxOrg 到 DW2O_BlobSNR
-            dw2o_start_idx = None
-            dw2o_end_idx = None
-            for idx, col in enumerate(columns):
-                if 'DW2O_MaxOrg' in col:
-                    dw2o_start_idx = idx
-                if 'DW2O_BlobSNR' in col:
-                    dw2o_end_idx = idx
-            
-            if dw2o_start_idx is not None and dw2o_end_idx is not None:
-                dw2o_cols = columns[dw2o_start_idx:dw2o_end_idx+1]
-                dw2o_cols = [col for col in dw2o_cols if 'DW2O' in col]
-            else:
-                dw2o_cols = []
-            
-            # DN1O通道: 从 DN1O_MaxOrg 到 DN1O_BlobSNR
-            dn1o_start_idx = None
-            dn1o_end_idx = None
-            for idx, col in enumerate(columns):
-                if 'DN1O_MaxOrg' in col:
-                    dn1o_start_idx = idx
-                if 'DN1O_BlobSNR' in col:
-                    dn1o_end_idx = idx
-            
-            if dn1o_start_idx is not None and dn1o_end_idx is not None:
-                dn1o_cols = columns[dn1o_start_idx:dn1o_end_idx+1]
-                dn1o_cols = [col for col in dn1o_cols if 'DN1O' in col]
-            else:
-                dn1o_cols = []
-            
-            return {
-                'id_col': id_col,
-                'x_col': x_col,
-                'y_col': y_col,
-                'match_col': match_col,
-                'dw1o_cols': dw1o_cols,
-                'dw2o_cols': dw2o_cols,
-                'dn1o_cols': dn1o_cols
-            }
-        
-        # 获取列信息
-        col_info = preprocess_data(df)
-        
-        # 显示找到的列信息
-        with st.expander("列信息"):
-            def index_to_excel_col(index):
-                """将0-based索引转换为Excel列名"""
-                result = ""
-                index += 1
-                while index > 0:
-                    index -= 1
-                    result = chr(index % 26 + ord('A')) + result
-                    index //= 26
-                return result
-            
-            st.write(f"总列数: {len(df.columns)}")
-            st.write(f"ID列: {col_info['id_col']}")
-            
-            if col_info['x_col'] in df.columns:
-                x_pos = df.columns.get_loc(col_info['x_col'])
-                st.write(f"X坐标列: {col_info['x_col']} (Excel列: {index_to_excel_col(x_pos)}, 索引: {x_pos})")
-            else:
-                st.write(f"X坐标列: {col_info['x_col']} (未找到)")
-                
-            if col_info['y_col'] in df.columns:
-                y_pos = df.columns.get_loc(col_info['y_col'])
-                st.write(f"Y坐标列: {col_info['y_col']} (Excel列: {index_to_excel_col(y_pos)}, 索引: {y_pos})")
-            else:
-                st.write(f"Y坐标列: {col_info['y_col']} (未找到)")
-                
-            if col_info['match_col'] in df.columns:
-                match_pos = df.columns.get_loc(col_info['match_col'])
-                st.write(f"匹配结果列: {col_info['match_col']} (Excel列: {index_to_excel_col(match_pos)}, 索引: {match_pos})")
-            else:
-                st.write(f"匹配结果列: {col_info['match_col']} (未找到)")
-                
-            st.write(f"DW1O通道特征列数量: {len(col_info['dw1o_cols'])} (从 DW1O_MaxOrg 到 DW1O_BlobSNR)")
-            if len(col_info['dw1o_cols']) > 0:
-                st.write(f"  - 第一个: {col_info['dw1o_cols'][0]}")
-                st.write(f"  - 最后一个: {col_info['dw1o_cols'][-1]}")
-            
-            st.write(f"DW2O通道特征列数量: {len(col_info['dw2o_cols'])} (从 DW2O_MaxOrg 到 DW2O_BlobSNR)")
-            if len(col_info['dw2o_cols']) > 0:
-                st.write(f"  - 第一个: {col_info['dw2o_cols'][0]}")
-                st.write(f"  - 最后一个: {col_info['dw2o_cols'][-1]}")
-            
-            st.write(f"DN1O通道特征列数量: {len(col_info['dn1o_cols'])} (从 DN1O_MaxOrg 到 DN1O_BlobSNR)")
-            if len(col_info['dn1o_cols']) > 0:
-                st.write(f"  - 第一个: {col_info['dn1o_cols'][0]}")
-                st.write(f"  - 最后一个: {col_info['dn1o_cols'][-1]}")
-            
-            # 显示一些样例列名用于调试
-            st.write("前10列名:")
-            st.write(df.columns[:10].tolist())
-            
-            # 显示FY, FZ, GA列附近的列名
-            fy_index = 156  # FY列的索引
-            fz_index = 157  # FZ列的索引  
-            ga_index = 182  # GA列的索引
-            
-            if len(df.columns) > fy_index + 2:
-                st.write(f"FY列附近 (索引{fy_index-2}到{fy_index+2}):")
-                st.write(df.columns[fy_index-2:fy_index+3].tolist())
-                
-            if len(df.columns) > ga_index + 2:
-                st.write(f"GA列附近 (索引{ga_index-2}到{ga_index+2}):")
-                st.write(df.columns[ga_index-2:ga_index+3].tolist())
-        
-        # 数据清洗和分类
-        if col_info['match_col'] and col_info['match_col'] in df.columns:
-            # 显示原始匹配结果分布
-            st.write("原始匹配结果分布：")
-            original_counts = df[col_info['match_col']].value_counts().sort_index()
-            st.write(original_counts)
-            
-            # 重新映射匹配结果：3,4,5都当作1正确检出
-            df['match_result_processed'] = df[col_info['match_col']].copy()
-            df.loc[df['match_result_processed'].isin([3, 4, 5]), 'match_result_processed'] = 1
-            
-            # 创建分类标签
-            def get_defect_type(value):
-                if pd.isna(value):
-                    return '其他'
-                elif value == 0:
-                    return '过检'
-                elif value == 1:
-                    return '正确检出'
-                elif value == 2:
-                    return '漏检'
-                else:
-                    return '其他'
-            
-            df['defect_type'] = df['match_result_processed'].apply(get_defect_type)
-            
-            # 显示处理后的分布
-            st.write("处理后匹配结果分布：")
-            processed_counts = df['defect_type'].value_counts()
-            st.write(processed_counts)
-            
-            # 统计信息
-            st.subheader("数据统计")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("过检数量", len(df[df['defect_type'] == '过检']))
-            with col2:
-                st.metric("正确检出数量", len(df[df['defect_type'] == '正确检出']))
-            with col3:
-                st.metric("漏检数量", len(df[df['defect_type'] == '漏检']))
-            
-            # 1. TotalSNR特征分布分析
-            st.subheader("1. TotalSNR特征分布分析")
-            
-            # 寻找TotalSNR相关列
-            totalsnr_cols = [col for col in df.columns if 'totalsnr' in col.lower()]
-            
-            if totalsnr_cols:
-                st.write(f"找到TotalSNR相关列: {totalsnr_cols}")
-                
-                # 为每个TotalSNR列创建分布图
-                for col in totalsnr_cols:
-                    if col in df.columns:
-                        st.write(f"### {col} 分布")
-                        
-                        # 单独分布图
-                        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                        
-                        defect_types = ['过检', '正确检出', '漏检']
-                        colors = ['red', 'green', 'blue']
-                        
-                        for i, (defect_type, color) in enumerate(zip(defect_types, colors)):
-                            data = df[df['defect_type'] == defect_type][col].dropna()
-                            if len(data) > 0:
-                                axes[i].hist(data, bins=30, alpha=0.7, color=color, edgecolor='black')
-                                axes[i].set_title(f'{defect_type} - {col}')
-                                axes[i].set_xlabel(col)
-                                axes[i].set_ylabel('频次')
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        
-                        # 合并分布图 - 改为折线图
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        
-                        for defect_type, color in zip(defect_types, colors):
-                            data = df[df['defect_type'] == defect_type][col].dropna()
-                            if len(data) > 0:
-                                # 计算直方图数据
-                                counts, bin_edges = np.histogram(data, bins=30)
-                                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-                                
-                                # 绘制折线图
-                                ax.plot(bin_centers, counts, label=defect_type, 
-                                       color=color, linewidth=2, marker='o', markersize=4)
-                        
-                        ax.set_xlabel(col)
-                        ax.set_ylabel('频次')
-                        ax.set_title(f'所有类型 - {col} 分布对比（折线图）')
-                        ax.legend()
-                        ax.grid(True, alpha=0.3)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
-            else:
-                st.warning("未找到TotalSNR相关列，请检查列名")
-            
-            # 2. 不同通道TotalSNR比值分布
-            st.subheader("2. 不同通道TotalSNR比值分布")
-            
-            # 直接查找TotalSNR列名
-            dw1o_totalsnr = 'DW1O_TotalSNR' if 'DW1O_TotalSNR' in df.columns else None
-            dw2o_totalsnr = 'DW2O_TotalSNR' if 'DW2O_TotalSNR' in df.columns else None
-            dn1o_totalsnr = 'DN1O_TotalSNR' if 'DN1O_TotalSNR' in df.columns else None
-            
-            st.write(f"找到的TotalSNR列：")
-            st.write(f"DW1O: {dw1o_totalsnr}")
-            st.write(f"DW2O: {dw2o_totalsnr}")
-            st.write(f"DN1O: {dn1o_totalsnr}")
-            
-            if dw1o_totalsnr and dw2o_totalsnr and dn1o_totalsnr:
-                # 计算比值
-                df['DW1O_DW2O_ratio'] = df[dw1o_totalsnr] / df[dw2o_totalsnr]
-                df['DW1O_DN1O_ratio'] = df[dw1o_totalsnr] / df[dn1o_totalsnr]
-                df['DW2O_DN1O_ratio'] = df[dw2o_totalsnr] / df[dn1o_totalsnr]
-                
-                # 绘制比值分布图
-                ratio_cols = ['DW1O_DW2O_ratio', 'DW1O_DN1O_ratio', 'DW2O_DN1O_ratio']
-                ratio_names = ['DW1O/DW2O', 'DW1O/DN1O', 'DW2O/DN1O']
-                
-                for ratio_col, ratio_name in zip(ratio_cols, ratio_names):
-                    if ratio_col in df.columns:
-                        st.write(f"### {ratio_name} 比值分布")
-                        
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        
-                        defect_types = ['过检', '正确检出', '漏检']
-                        colors = ['red', 'green', 'blue']
-                        
-                        for defect_type, color in zip(defect_types, colors):
-                            data = df[df['defect_type'] == defect_type][ratio_col].dropna()
-                            # 过滤异常值
-                            data = data[(data > 0) & (data < np.inf)]
-                            if len(data) > 0:
-                                # 计算直方图数据
-                                counts, bin_edges = np.histogram(data, bins=30)
-                                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-                                
-                                # 绘制折线图
-                                ax.plot(bin_centers, counts, label=defect_type, 
-                                       color=color, linewidth=2, marker='o', markersize=4)
-                        
-                        ax.set_xlabel(f'{ratio_name} 比值')
-                        ax.set_ylabel('频次')
-                        ax.set_title(f'{ratio_name} 比值分布对比（折线图）')
-                        ax.legend()
-                        ax.grid(True, alpha=0.3)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
-            else:
-                st.warning("未找到各通道的TotalSNR列")
-            
-            # 3. 坐标分布（墨卡托图）
-            st.subheader("3. 缺陷坐标分布")
-            
-            if col_info['x_col'] and col_info['y_col']:
-                if col_info['x_col'] in df.columns and col_info['y_col'] in df.columns:
-                    # 创建交互式散点图 - 墨卡托风格 1:1比例
-                    fig = px.scatter(df, 
-                                   x=col_info['x_col'], 
-                                   y=col_info['y_col'],
-                                   color='defect_type',
-                                   color_discrete_map={
-                                       '过检': 'red',
-                                       '正确检出': 'green', 
-                                       '漏检': 'blue'
-                                   },
-                                   title='缺陷坐标分布图',
-                                   hover_data=[col_info['id_col']])
-                    
-                    # 设置坐标轴范围为0-300000
-                    fig.update_xaxes(range=[0, 300000], title='X坐标')
-                    fig.update_yaxes(range=[0, 300000], title='Y坐标')
-                    
-                    # 添加中心点标记
-                    fig.add_trace(go.Scatter(x=[150000], y=[150000], 
-                                           mode='markers+text',
-                                           marker=dict(size=15, color='black', symbol='x'),
-                                           text=['中心点(150000,150000)'],
-                                           textposition='top center',
-                                           name='中心点'))
-                    
-                    # 设置1:1比例和墨卡托风格
-                    fig.update_layout(
-                        width=800, 
-                        height=800,  # 保持1:1比例
-                        xaxis=dict(
-                            scaleanchor="y",  # X轴锚定到Y轴，保持1:1比例
-                            scaleratio=1,     # 1:1缩放比例
-                            constrain="domain"
-                        ),
-                        yaxis=dict(
-                            constrain="domain"
-                        ),
-                        title_x=0.5,  # 标题居中
-                        showlegend=True,
-                        plot_bgcolor='white',  # 白色背景
-                        paper_bgcolor='white'
-                    )
-                    
-                    # 添加网格线，类似地图网格
-                    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-                    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning(f"坐标列 {col_info['x_col']}, {col_info['y_col']} 不存在于数据中")
-            else:
-                st.warning("未找到坐标列")
-            
-            # 4. DW1O_ApproxValueRaws特征分布
-            st.subheader("4. DW1O_ApproxValueRaws特征分布")
-            
-            # 寻找DW1O_ApproxValueRaws列
-            approx_cols = [col for col in col_info['dw1o_cols'] if 'approxvalueraws' in col.lower()]
-            
-            if approx_cols:
-                for col in approx_cols:
-                    if col in df.columns:
-                        st.write(f"### {col} 分布")
-                        
-                        # 单独分布图
-                        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                        
-                        defect_types = ['过检', '正确检出', '漏检']
-                        colors = ['red', 'green', 'blue']
-                        
-                        for i, (defect_type, color) in enumerate(zip(defect_types, colors)):
-                            data = df[df['defect_type'] == defect_type][col].dropna()
-                            if len(data) > 0:
-                                axes[i].hist(data, bins=30, alpha=0.7, color=color, edgecolor='black')
-                                axes[i].set_title(f'{defect_type} - {col}')
-                                axes[i].set_xlabel(col)
-                                axes[i].set_ylabel('频次')
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        
-                        # 合并分布图 - 改为折线图
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        
-                        for defect_type, color in zip(defect_types, colors):
-                            data = df[df['defect_type'] == defect_type][col].dropna()
-                            if len(data) > 0:
-                                # 计算直方图数据
-                                counts, bin_edges = np.histogram(data, bins=30)
-                                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-                                
-                                # 绘制折线图
-                                ax.plot(bin_centers, counts, label=defect_type, 
-                                       color=color, linewidth=2, marker='o', markersize=4)
-                        
-                        ax.set_xlabel(col)
-                        ax.set_ylabel('频次')
-                        ax.set_title(f'所有类型 - {col} 分布对比（折线图）')
-                        ax.legend()
-                        ax.grid(True, alpha=0.3)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        
-                        # 箱线图对比
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        
-                        data_for_box = []
-                        labels_for_box = []
-                        
-                        for defect_type in defect_types:
-                            data = df[df['defect_type'] == defect_type][col].dropna()
-                            if len(data) > 0:
-                                data_for_box.append(data)
-                                labels_for_box.append(defect_type)
-                        
-                        if data_for_box:
-                            ax.boxplot(data_for_box, tick_labels=labels_for_box)
-                            ax.set_title(f'{col} 箱线图对比')
-                            ax.set_ylabel(col)
-                            
-                            plt.tight_layout()
-                            st.pyplot(fig)
-            else:
-                st.warning("未找到DW1O_ApproxValueRaws相关列")
-            
-            # 数据导出功能
-            st.subheader("数据导出")
-            
-            if st.button("导出处理后的数据"):
-                try:
-                    processed_df = df.copy()
-                    # 确保所有数据都能正确序列化
-                    for col in processed_df.columns:
-                        if processed_df[col].dtype == 'object':
-                            processed_df[col] = processed_df[col].astype(str)
-                    
-                    csv = processed_df.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button(
-                        label="下载CSV文件",
-                        data=csv,
-                        file_name="processed_defect_data.csv",
-                        mime="text/csv"
-                    )
-                except Exception as e:
-                    st.error(f"导出数据时出错: {str(e)}")
-                    st.write("请检查数据格式是否正确")
-        
-        else:
-            st.error("未找到匹配结果列，请检查文件格式")
-    
-    except Exception as e:
-        st.error(f"处理文件时出错: {str(e)}")
-        st.write("请确保文件格式正确，且包含所需的列")
-
-    else:
-        st.info("请上传Excel或CSV文件开始分析")
-        st.markdown("""
-        ### 使用说明：
-        1. 上传包含缺陷数据的Excel或CSV文件
-        2. 文件应包含以下列：
-           - 第A列：缺陷ID
-           - 第FY列：X坐标 (dCenterXCartisianMove)
-           - 第FZ列：Y坐标 (dCenterYCartisianMove)
-           - 第GA列：匹配结果（0=过检，1=正确检出，2=漏检，3/4/5转换为1）
-           - 第J-BN列：DW1O通道特征
-           - 第BO-DS列：DW2O通道特征
-           - 第DT-FX列：DN1O通道特征
-        3. 系统将自动进行以下分析：
-           - TotalSNR特征分布
-           - 不同通道比值分布
-           - 坐标分布可视化（1:1墨卡托风格）
-           - DW1O_ApproxValueRaws特征分布
-        """)
+tab1, tab2, tab3, tab4 = st.tabs(["📁 过漏检分析", "🖼️ 图像查看", "✂️ 区域过滤", "⚙️ 规则编辑器"])
 
 with tab2:
-    st.markdown('<a name="坐标匹配"></a>', unsafe_allow_html=True)
-    st.header("🔗 坐标匹配功能")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("上传CASI缺陷表格")
-        casi_file = st.file_uploader("选择CASI文件", type=['xlsx', 'xls', 'csv'], key="casi")
-        
-    with col2:
-        st.subheader("上传KLA缺陷表格")
-        kla_file = st.file_uploader("选择KLA文件", type=['xlsx', 'xls', 'csv'], key="kla")
-    
-    # 匹配距离设置
-    match_distance = st.number_input("匹配距离阈值", min_value=1, max_value=1000, value=300, 
-                                   help="两个坐标点之间的最大匹配距离")
-    
-    if casi_file is not None and kla_file is not None:
-        try:
-            # 读取文件
-            if casi_file.name.endswith('.csv'):
-                casi_df = pd.read_csv(casi_file)
-            else:
-                casi_df = pd.read_excel(casi_file)
-                
-            if kla_file.name.endswith('.csv'):
-                kla_df = pd.read_csv(kla_file)
-            else:
-                kla_df = pd.read_excel(kla_file)
-            
-            st.success(f"文件读取成功！CASI: {casi_df.shape}, KLA: {kla_df.shape}")
-            
-            # 显示文件预览
-            with st.expander("文件预览"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("CASI表格前5行:")
-                    st.dataframe(casi_df.head())
-                with col2:
-                    st.write("KLA表格前5行:")
-                    st.dataframe(kla_df.head())
-            
-            # 处理坐标匹配
-            @st.cache_data
-            def process_coordinate_matching(casi_df, kla_df, distance_threshold):
-                # 计算Excel列位置到索引的转换
-                def excel_col_to_index(col_name):
-                    result = 0
-                    for char in col_name:
-                        result = result * 26 + (ord(char) - ord('A') + 1)
-                    return result - 1
-                
-                # 获取CASI表格的坐标列
-                casi_x_col = None
-                casi_y_col = None
-                
-                # 先通过列名查找
-                for col in casi_df.columns:
-                    if 'dCenterXCartisianMove' in col:
-                        casi_x_col = col
-                    elif 'dCenterYCartisianMove' in col:
-                        casi_y_col = col
-                
-                # 如果没找到，通过位置查找（FY, FZ列）
-                if casi_x_col is None or casi_y_col is None:
-                    fy_index = excel_col_to_index('FY')
-                    fz_index = excel_col_to_index('FZ')
-                    
-                    if len(casi_df.columns) > fy_index:
-                        casi_x_col = casi_df.columns[fy_index]
-                    if len(casi_df.columns) > fz_index:
-                        casi_y_col = casi_df.columns[fz_index]
-                
-                # 获取KLA表格的坐标列（B, C列）
-                kla_x_col = kla_df.columns[1] if len(kla_df.columns) > 1 else None  # B列
-                kla_y_col = kla_df.columns[2] if len(kla_df.columns) > 2 else None  # C列
-                
-                # 检查TotalSNR列
-                totalsnr_cols = {
-                    'DW1O_TotalSNR': 'DW1O_TotalSNR' if 'DW1O_TotalSNR' in casi_df.columns else None,
-                    'DW2O_TotalSNR': 'DW2O_TotalSNR' if 'DW2O_TotalSNR' in casi_df.columns else None,
-                    'DN1O_TotalSNR': 'DN1O_TotalSNR' if 'DN1O_TotalSNR' in casi_df.columns else None
-                }
-                
-                # 检查Size列
-                size_cols = {
-                    'DW1O_Size': 'DW1O_Size' if 'DW1O_Size' in casi_df.columns else None,
-                    'DW2O_Size': 'DW2O_Size' if 'DW2O_Size' in casi_df.columns else None,
-                    'DN1O_Size': 'DN1O_Size' if 'DN1O_Size' in casi_df.columns else None
-                }
-                
-                return {
-                    'casi_x_col': casi_x_col,
-                    'casi_y_col': casi_y_col,
-                    'kla_x_col': kla_x_col,
-                    'kla_y_col': kla_y_col,
-                    'totalsnr_cols': totalsnr_cols,
-                    'size_cols': size_cols
-                }
-            
-            coord_info = process_coordinate_matching(casi_df, kla_df, match_distance)
-            
-            # 显示坐标列信息
-            with st.expander("坐标列信息"):
-                st.write(f"CASI X坐标列: {coord_info['casi_x_col']}")
-                st.write(f"CASI Y坐标列: {coord_info['casi_y_col']}")
-                st.write(f"KLA X坐标列: {coord_info['kla_x_col']}")
-                st.write(f"KLA Y坐标列: {coord_info['kla_y_col']}")
-                st.write(f"找到的TotalSNR列: {coord_info['totalsnr_cols']}")
-                st.write(f"找到的Size列: {coord_info['size_cols']}")
-            
-            if all([coord_info['casi_x_col'], coord_info['casi_y_col'], 
-                   coord_info['kla_x_col'], coord_info['kla_y_col']]):
-                
-                if st.button("开始坐标匹配", type="primary"):
-                    with st.spinner("正在进行坐标匹配..."):
-                        
-                        # 创建结果表格
-                        result_df = kla_df.copy()
-                        
-                        # 添加新列
-                        result_df['CASI_DefectID'] = ''
-                        result_df['CASI_X'] = np.nan
-                        result_df['CASI_Y'] = np.nan
-                        result_df['CASI_DW1O通道'] = ''
-                        result_df['CASI_DW1O_Size'] = np.nan
-                        result_df['CASI_DW2O通道'] = ''
-                        result_df['CASI_DW2O_Size'] = np.nan
-                        result_df['CASI_DN1O通道'] = ''
-                        result_df['CASI_DN1O_Size'] = np.nan
-                        
-                        # 进行坐标匹配
-                        matched_count = 0
-                        
-                        for kla_idx, kla_row in kla_df.iterrows():
-                            kla_x = kla_row[coord_info['kla_x_col']]
-                            kla_y = kla_row[coord_info['kla_y_col']]
-                            
-                            if pd.isna(kla_x) or pd.isna(kla_y):
-                                continue
-                            
-                            # 计算与所有CASI点的距离
-                            distances = []
-                            for casi_idx, casi_row in casi_df.iterrows():
-                                casi_x = casi_row[coord_info['casi_x_col']]
-                                casi_y = casi_row[coord_info['casi_y_col']]
-                                
-                                if pd.isna(casi_x) or pd.isna(casi_y):
-                                    distances.append(float('inf'))
-                                else:
-                                    dist = np.sqrt((kla_x - casi_x)**2 + (kla_y - casi_y)**2)
-                                    distances.append(dist)
-                            
-                            # 找到最近的匹配点
-                            if distances:
-                                min_dist_idx = np.argmin(distances)
-                                min_dist = distances[min_dist_idx]
-                                
-                                if min_dist <= match_distance:
-                                    matched_count += 1
-                                    
-                                    # 获取匹配的CASI点信息
-                                    matched_casi = casi_df.iloc[min_dist_idx]
-                                    
-                                    # 添加CASI的DefectID（第A列）
-                                    casi_defect_id = matched_casi[casi_df.columns[0]]  # A列是第一列，索引为0
-                                    result_df.at[kla_idx, 'CASI_DefectID'] = casi_defect_id
-                                    
-                                    result_df.at[kla_idx, 'CASI_X'] = matched_casi[coord_info['casi_x_col']]
-                                    result_df.at[kla_idx, 'CASI_Y'] = matched_casi[coord_info['casi_y_col']]
-                                    
-                                    # 检查TotalSNR列是否有值，并获取对应的Size值
-                                    for channel, col_name in coord_info['totalsnr_cols'].items():
-                                        if col_name and col_name in casi_df.columns:
-                                            value = matched_casi[col_name]
-                                            channel_short = channel.split('_')[0]  # DW1O, DW2O, DN1O
-                                            
-                                            if pd.notna(value) and value != 0:
-                                                result_df.at[kla_idx, f'CASI_{channel_short}通道'] = '1'
-                                            
-                                            # 获取对应通道的Size值
-                                            size_col_name = coord_info['size_cols'].get(f'{channel_short}_Size')
-                                            if size_col_name and size_col_name in casi_df.columns:
-                                                size_value = matched_casi[size_col_name]
-                                                if pd.notna(size_value):
-                                                    result_df.at[kla_idx, f'CASI_{channel_short}_Size'] = size_value
-                        
-                        st.success(f"匹配完成！共匹配到 {matched_count} 个坐标点")
-                        
-                        # 显示匹配结果统计
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("KLA总数", len(kla_df))
-                        with col2:
-                            st.metric("CASI总数", len(casi_df))
-                        with col3:
-                            st.metric("匹配成功", matched_count)
-                        with col4:
-                            st.metric("匹配率", f"{matched_count/len(kla_df)*100:.1f}%")
-                        
-                        # 显示结果预览
-                        st.subheader("匹配结果预览")
-                        st.dataframe(result_df.head(10))
-                        
-                        # 通道匹配统计
-                        st.subheader("通道匹配统计")
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            dw1o_count = (result_df['CASI_DW1O通道'] == '1').sum()
-                            dw1o_size_count = result_df['CASI_DW1O_Size'].notna().sum()
-                            st.metric("DW1O通道匹配", dw1o_count)
-                            st.write(f"Size数据: {dw1o_size_count} 个")
-                        with col2:
-                            dw2o_count = (result_df['CASI_DW2O通道'] == '1').sum()
-                            dw2o_size_count = result_df['CASI_DW2O_Size'].notna().sum()
-                            st.metric("DW2O通道匹配", dw2o_count)
-                            st.write(f"Size数据: {dw2o_size_count} 个")
-                        with col3:
-                            dn1o_count = (result_df['CASI_DN1O通道'] == '1').sum()
-                            dn1o_size_count = result_df['CASI_DN1O_Size'].notna().sum()
-                            st.metric("DN1O通道匹配", dn1o_count)
-                            st.write(f"Size数据: {dn1o_size_count} 个")
-                        
-                        # 导出结果
-                        st.subheader("导出匹配结果")
-                        
-                        try:
-                            # 确保所有数据都能正确序列化
-                            export_df = result_df.copy()
-                            for col in export_df.columns:
-                                if export_df[col].dtype == 'object':
-                                    export_df[col] = export_df[col].astype(str)
-                            
-                            csv = export_df.to_csv(index=False, encoding='utf-8-sig')
-                            
-                            st.download_button(
-                                label="📥 下载匹配结果CSV文件",
-                                data=csv,
-                                file_name="coordinate_matching_result.csv",
-                                mime="text/csv",
-                                help="点击下载完整的坐标匹配结果"
-                            )
-                            
-                            st.info(f"准备导出 {len(export_df)} 行数据，包含 {len(export_df.columns)} 列")
-                            
-                        except Exception as e:
-                            st.error(f"准备导出数据时出错: {str(e)}")
-                            st.write("错误详情：", str(e))
-                        
-                        # 可视化匹配结果
-                        st.subheader("匹配结果可视化")
-                        
-                        fig = go.Figure()
-                        
-                        # 添加KLA点
-                        fig.add_trace(go.Scatter(
-                            x=kla_df[coord_info['kla_x_col']],
-                            y=kla_df[coord_info['kla_y_col']],
-                            mode='markers',
-                            marker=dict(size=8, color='blue', opacity=0.6),
-                            name='KLA缺陷点',
-                            hovertemplate='KLA<br>X: %{x}<br>Y: %{y}<extra></extra>'
-                        ))
-                        
-                        # 添加CASI点
-                        fig.add_trace(go.Scatter(
-                            x=casi_df[coord_info['casi_x_col']],
-                            y=casi_df[coord_info['casi_y_col']],
-                            mode='markers',
-                            marker=dict(size=6, color='red', opacity=0.6),
-                            name='CASI缺陷点',
-                            hovertemplate='CASI<br>X: %{x}<br>Y: %{y}<extra></extra>'
-                        ))
-                        
-                        # 添加匹配连线
-                        matched_kla = result_df[result_df['CASI_X'].notna()]
-                        if len(matched_kla) > 0:
-                            for _, row in matched_kla.iterrows():
-                                fig.add_trace(go.Scatter(
-                                    x=[row[coord_info['kla_x_col']], row['CASI_X']],
-                                    y=[row[coord_info['kla_y_col']], row['CASI_Y']],
-                                    mode='lines',
-                                    line=dict(color='green', width=1, dash='dot'),
-                                    showlegend=False,
-                                    hoverinfo='skip'
-                                ))
-                        
-                        fig.update_layout(
-                            title='坐标匹配结果可视化',
-                            xaxis_title='X坐标',
-                            yaxis_title='Y坐标',
-                            width=800,
-                            height=800,
-                            xaxis=dict(scaleanchor="y", scaleratio=1),
-                            showlegend=True
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-            
-            else:
-                st.error("未能找到所需的坐标列，请检查文件格式")
-                
-        except Exception as e:
-            st.error(f"处理文件时出错: {str(e)}")
-            st.write("请确保文件格式正确")
-    
-    else:
-        st.info("请上传两个文件开始坐标匹配")
-        st.markdown("""
-        ### 坐标匹配功能说明：
-        1. **CASI文件要求**：
-           - A列：缺陷ID (DefectID)
-           - FY、FZ列包含坐标 (dCenterXCartisianMove, dCenterYCartisianMove)
-           - 包含DW1O_TotalSNR, DW2O_TotalSNR, DN1O_TotalSNR列
-        
-        2. **KLA文件要求**：
-           - B列、C列包含坐标
-        
-        3. **匹配规则**：
-           - 在设定距离范围内寻找最近的匹配点
-           - 基于KLA表格生成结果
-           - 添加CASI坐标和通道匹配信息
-        
-        4. **输出结果**：
-           - 原KLA表格所有列
-           - CASI_DefectID: 匹配的CASI缺陷ID
-           - CASI_X, CASI_Y: 匹配的CASI坐标
-           - CASI_DW1O通道, CASI_DW1O_Size: DW1O通道匹配状态和Size值
-           - CASI_DW2O通道, CASI_DW2O_Size: DW2O通道匹配状态和Size值
-           - CASI_DN1O通道, CASI_DN1O_Size: DN1O通道匹配状态和Size值
-        """)
-
-with tab3:
     st.markdown('<a name="图像查看"></a>', unsafe_allow_html=True)
     st.header("🖼️ TIFF图像查看器")
     
@@ -1394,284 +471,10 @@ with tab3:
            - 详细的图像信息显示
         """)
 
-# 第四个标签页 - 晶圆缺陷分布图
-with tab4:
-    st.markdown('<a name="晶圆缺陷图"></a>', unsafe_allow_html=True)
-    st.header("🎯 晶圆缺陷分布图")
-    
-    st.markdown("""
-    ### 功能说明
-    上传包含晶圆缺陷数据的Excel文件，绘制缺陷分布图。
-    
-    **所需列名：**
-    - `dCenterXCartisian`: CASI的X坐标
-    - `dCenterYCartisian`: CASI的Y坐标
-    - `KLAXREL`: KLA的X坐标
-    - `KLAYREL`: KLA的Y坐标
-    - 匹配结果列（针对CASI: 0=过检，1/3/4/5=正确检出，2=漏检）
-    - `DW1O_Size`: DW1O尺寸（用于悬浮框显示）
-    - `DW2O_Size`: DW2O尺寸（用于悬浮框显示）
-    
-    **说明：**
-    - CASI数据用圆点表示，根据匹配结果分为过检、正确检出、漏检
-    - KLA数据用三角形表示，全部为检出的缺陷（显示为绿色）
-    """)
-    
-    # 文件上传
-    wafer_file = st.file_uploader("上传晶圆缺陷Excel文件", type=['xlsx', 'xls', 'csv'], key="wafer_uploader")
-    
-    if wafer_file is not None:
-        try:
-            # 读取文件
-            if wafer_file.name.endswith('.csv'):
-                wafer_df = pd.read_csv(wafer_file)
-            else:
-                wafer_df = pd.read_excel(wafer_file)
-            
-            st.success(f"文件上传成功！数据形状: {wafer_df.shape}")
-            
-            # 显示数据预览
-            with st.expander("数据预览"):
-                st.dataframe(wafer_df.head(10))
-                st.write("列名:", list(wafer_df.columns))
-            
-            # 列名映射选择
-            st.subheader("列名映射")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                casi_x_col = st.selectbox("CASI X坐标列", wafer_df.columns, 
-                                         index=list(wafer_df.columns).index('dCenterXCartisian') if 'dCenterXCartisian' in wafer_df.columns else 0)
-                casi_y_col = st.selectbox("CASI Y坐标列", wafer_df.columns,
-                                         index=list(wafer_df.columns).index('dCenterYCartisian') if 'dCenterYCartisian' in wafer_df.columns else 0)
-            
-            with col2:
-                kla_x_col = st.selectbox("KLA X坐标列", wafer_df.columns,
-                                        index=list(wafer_df.columns).index('KLAXREL') if 'KLAXREL' in wafer_df.columns else 0)
-                kla_y_col = st.selectbox("KLA Y坐标列", wafer_df.columns,
-                                        index=list(wafer_df.columns).index('KLAYREL') if 'KLAYREL' in wafer_df.columns else 0)
-            
-            with col3:
-                match_col = st.selectbox("匹配结果列", wafer_df.columns, 
-                                        index=0)
-                dw1o_col = st.selectbox("DW1O_Size列", wafer_df.columns,
-                                       index=list(wafer_df.columns).index('DW1O_Size') if 'DW1O_Size' in wafer_df.columns else 0)
-                dw2o_col = st.selectbox("DW2O_Size列", wafer_df.columns,
-                                       index=list(wafer_df.columns).index('DW2O_Size') if 'DW2O_Size' in wafer_df.columns else 0)
-            
-            # 绘图参数
-            st.subheader("绘图参数")
-            col1, col2 = st.columns(2)
-            with col1:
-                center_x = st.number_input("中心X坐标", value=150000.0)
-                center_y = st.number_input("中心Y坐标", value=150000.0)
-            with col2:
-                plot_range = st.number_input("绘图范围（半径）", value=150000.0, min_value=1000.0)
-                point_size = st.slider("点的大小", min_value=5, max_value=20, value=10)
-            
-            # 绘制按钮
-            if st.button("生成晶圆缺陷分布图", type="primary"):
-                # 数据准备
-                plot_df = wafer_df.copy()
-                
-                # 分类缺陷类型
-                def classify_defect(match_result):
-                    """根据匹配结果分类缺陷"""
-                    if pd.isna(match_result):
-                        return '未知'
-                    match_result = int(match_result)
-                    if match_result == 0:
-                        return '过检'
-                    elif match_result in [1, 3, 4, 5]:
-                        return '正确检出'
-                    elif match_result == 2:
-                        return '漏检'
-                    else:
-                        return '未知'
-                
-                plot_df['缺陷类型'] = plot_df[match_col].apply(classify_defect)
-                
-                # 创建图形
-                fig = go.Figure()
-                
-                # 定义颜色映射（针对CASI）
-                color_map = {
-                    '过检': '#FF6B6B',      # 红色
-                    '正确检出': '#4ECDC4',  # 青色
-                    '漏检': '#FFE66D',      # 黄色
-                    '未知': '#95A5A6'       # 灰色
-                }
-                
-                # 绘制CASI数据（圆点）
-                for defect_type in ['过检', '正确检出', '漏检', '未知']:
-                    mask = plot_df['缺陷类型'] == defect_type
-                    if mask.any():
-                        casi_data = plot_df[mask]
-                        
-                        # 创建悬浮文本
-                        hover_text = []
-                        for idx, row in casi_data.iterrows():
-                            text = f"<b>CASI - {defect_type}</b><br>"
-                            text += f"X: {row[casi_x_col]:.2f}<br>"
-                            text += f"Y: {row[casi_y_col]:.2f}<br>"
-                            text += f"DW1O_Size: {row[dw1o_col]}<br>"
-                            text += f"DW2O_Size: {row[dw2o_col]}"
-                            hover_text.append(text)
-                        
-                        fig.add_trace(go.Scatter(
-                            x=casi_data[casi_x_col],
-                            y=casi_data[casi_y_col],
-                            mode='markers',
-                            name=f'CASI-{defect_type}',
-                            marker=dict(
-                                symbol='circle',
-                                size=point_size,
-                                color=color_map[defect_type],
-                                line=dict(width=1, color='white')
-                            ),
-                            hovertext=hover_text,
-                            hoverinfo='text',
-                            legendgroup=defect_type,
-                            showlegend=True
-                        ))
-                
-                # 绘制KLA数据（三角形）- 全部为检出的缺陷
-                # 过滤有效的KLA坐标
-                kla_valid = plot_df[
-                    pd.notna(plot_df[kla_x_col]) & 
-                    pd.notna(plot_df[kla_y_col])
-                ]
-                
-                if len(kla_valid) > 0:
-                    # 创建悬浮文本
-                    hover_text = []
-                    for idx, row in kla_valid.iterrows():
-                        text = f"<b>KLA - 检出</b><br>"
-                        text += f"X: {row[kla_x_col]:.2f}<br>"
-                        text += f"Y: {row[kla_y_col]:.2f}<br>"
-                        text += f"DW1O_Size: {row[dw1o_col]}<br>"
-                        text += f"DW2O_Size: {row[dw2o_col]}"
-                        hover_text.append(text)
-                    
-                    fig.add_trace(go.Scatter(
-                        x=kla_valid[kla_x_col],
-                        y=kla_valid[kla_y_col],
-                        mode='markers',
-                        name='KLA-检出',
-                        marker=dict(
-                            symbol='triangle-up',
-                            size=point_size,
-                            color='#51CF66',  # 绿色
-                            line=dict(width=1, color='white')
-                        ),
-                        hovertext=hover_text,
-                        hoverinfo='text',
-                        showlegend=True
-                    ))
-                
-                # 添加晶圆边界圆
-                theta = np.linspace(0, 2*np.pi, 100)
-                circle_x = center_x + plot_range * np.cos(theta)
-                circle_y = center_y + plot_range * np.sin(theta)
-                
-                fig.add_trace(go.Scatter(
-                    x=circle_x,
-                    y=circle_y,
-                    mode='lines',
-                    name='晶圆边界',
-                    line=dict(color='gray', width=2, dash='dash'),
-                    showlegend=True,
-                    hoverinfo='skip'
-                ))
-                
-                # 设置布局
-                fig.update_layout(
-                    title=dict(
-                        text='晶圆缺陷分布图',
-                        x=0.5,
-                        xanchor='center',
-                        font=dict(size=20)
-                    ),
-                    xaxis=dict(
-                        title='X坐标',
-                        range=[center_x - plot_range - 10000, center_x + plot_range + 10000],
-                        scaleanchor="y",
-                        scaleratio=1,
-                        showgrid=True,
-                        gridcolor='lightgray'
-                    ),
-                    yaxis=dict(
-                        title='Y坐标',
-                        range=[center_y - plot_range - 10000, center_y + plot_range + 10000],
-                        showgrid=True,
-                        gridcolor='lightgray'
-                    ),
-                    plot_bgcolor='white',
-                    hovermode='closest',
-                    width=900,
-                    height=900,
-                    legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="left",
-                        x=1.02,
-                        bgcolor='rgba(255,255,255,0.8)',
-                        bordercolor='gray',
-                        borderwidth=1
-                    )
-                )
-                
-                # 显示图形
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # 显示统计信息
-                st.subheader("缺陷统计")
-                col1, col2, col3, col4, col5 = st.columns(5)
-                
-                defect_counts = plot_df['缺陷类型'].value_counts()
-                
-                with col1:
-                    st.metric("CASI-过检", defect_counts.get('过检', 0))
-                with col2:
-                    st.metric("CASI-正确检出", defect_counts.get('正确检出', 0))
-                with col3:
-                    st.metric("CASI-漏检", defect_counts.get('漏检', 0))
-                with col4:
-                    kla_count = len(plot_df[pd.notna(plot_df[kla_x_col]) & pd.notna(plot_df[kla_y_col])])
-                    st.metric("KLA-检出", kla_count)
-                with col5:
-                    st.metric("CASI总计", len(plot_df))
-                
-                # 详细统计表
-                with st.expander("详细统计"):
-                    st.write("### CASI数据统计")
-                    st.write(f"总数: {len(plot_df)}")
-                    
-                    st.write("### KLA数据统计")
-                    kla_valid_count = plot_df[
-                        pd.notna(plot_df[kla_x_col]) & 
-                        pd.notna(plot_df[kla_y_col])
-                    ].shape[0]
-                    st.write(f"有效KLA坐标数: {kla_valid_count}")
-                    
-                    st.write("### 各类型统计")
-                    stats_df = pd.DataFrame({
-                        '缺陷类型': defect_counts.index,
-                        '数量': defect_counts.values,
-                        '占比': (defect_counts.values / len(plot_df) * 100).round(2)
-                    })
-                    stats_df['占比'] = stats_df['占比'].astype(str) + '%'
-                    st.dataframe(stats_df, use_container_width=True)
-                    
-        except Exception as e:
-            st.error(f"处理文件时出错: {str(e)}")
-            st.exception(e)
-
 # 第五个标签页 - 多文件夹缺陷对比
-with tab5:
+with tab1:
     st.markdown('<a name="多工况对比"></a>', unsafe_allow_html=True)
-    st.header("📁 多文件夹缺陷对比分析")
+    st.header("📁 过漏检分析")
     
     st.markdown("""
     ### 功能说明
@@ -7222,8 +6025,8 @@ with tab5:
                 st.exception(e)
 
 
-# Tab6: 区域过滤
-with tab6:
+# Tab3: 区域过滤
+with tab3:
     st.markdown('<a name="区域过滤"></a>', unsafe_allow_html=True)
     st.header("✂️ 区域过滤 - 删除指定区域内的缺陷点")
     
@@ -8299,8 +7102,7 @@ with tab6:
     elif filter_folder:
         st.error("❌ 文件夹路径不存在，请检查路径")
 
-# Tab7: 饱和像素分析
-with tab7:
+
     st.markdown('<a name="饱和像素分析"></a>', unsafe_allow_html=True)
     st.header("🔬 饱和像素分析")
     st.write("分析mask图像中缺陷区域的饱和像素分布")
@@ -9504,3 +8306,445 @@ with tab7:
             plt.tight_layout()
             st.pyplot(fig)
             plt.close()
+
+with tab4:
+    st.markdown('<a name="规则编辑器"></a>', unsafe_allow_html=True)
+    st.header("⚙️ 分类规则编辑器")
+    
+    import json
+    import rule_engine
+    
+    # 规则文件路径
+    default_rules_path = "classification_rules.json"
+    
+    st.subheader("📂 规则文件管理")
+    
+    # 添加加载方式选择
+    load_method = st.radio(
+        "选择加载方式",
+        ["📁 从文件路径加载", "📤 上传JSON文件"],
+        horizontal=True
+    )
+    
+    rules_file_path = None
+    load_button = False
+    uploaded_rules = None
+    
+    if load_method == "📁 从文件路径加载":
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            rules_file_path = st.text_input("规则文件路径", value=default_rules_path, key="rules_path_input")
+        with col2:
+            st.write("")
+            st.write("")
+            load_button = st.button("🔄 加载规则", key="load_from_path")
+        with col3:
+            st.write("")
+            st.write("")
+            # 文件浏览器按钮提示
+            if st.button("💡 提示", key="path_help"):
+                st.info("💡 在文本框中输入完整的文件路径，例如：\n\n`D:/streamlit/classification_rules.json`\n\n或使用相对路径：\n\n`classification_rules.json`")
+    
+    else:  # 上传JSON文件
+        uploaded_file = st.file_uploader(
+            "选择JSON规则文件",
+            type=['json'],
+            help="上传classification_rules.json文件",
+            key="json_uploader"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                # 读取上传的文件内容
+                uploaded_rules = json.load(uploaded_file)
+                st.success(f"✅ 文件 '{uploaded_file.name}' 上传成功")
+                
+                # 显示预览
+                with st.expander("📄 文件预览"):
+                    st.json(uploaded_rules)
+                
+                # 加载按钮
+                if st.button("✔️ 确认加载此文件", type="primary", key="load_uploaded"):
+                    load_button = True
+            except json.JSONDecodeError as e:
+                st.error(f"❌ JSON文件格式错误: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ 读取文件失败: {str(e)}")
+    
+    # 初始化session state
+    if 'rules_config' not in st.session_state:
+        # 首次加载，尝试加载默认文件
+        try:
+            rules_config = rule_engine.load_rules_from_json(default_rules_path)
+            if rules_config:
+                st.session_state.rules_config = rules_config
+                st.session_state.current_rules_source = default_rules_path
+                st.info(f"ℹ️ 已自动加载默认规则文件：{default_rules_path}")
+            else:
+                st.warning("⚠️ 未找到默认规则文件，请加载或上传规则文件")
+                st.stop()
+        except:
+            st.warning("⚠️ 未找到默认规则文件，请加载或上传规则文件")
+            st.stop()
+    
+    # 处理加载操作
+    if load_button:
+        if load_method == "📁 从文件路径加载" and rules_file_path:
+            rules_config = rule_engine.load_rules_from_json(rules_file_path)
+            if rules_config:
+                st.session_state.rules_config = rules_config
+                st.session_state.current_rules_source = rules_file_path
+                st.success(f"✅ 成功加载规则文件：{rules_file_path}")
+                st.rerun()
+            else:
+                st.error(f"❌ 加载规则文件失败：{rules_file_path}")
+                st.error("请检查文件路径是否正确，文件是否存在")
+                st.stop()
+        elif load_method == "📤 上传JSON文件" and uploaded_rules:
+            st.session_state.rules_config = uploaded_rules
+            st.session_state.current_rules_source = uploaded_file.name
+            st.success(f"✅ 成功加载上传的规则文件：{uploaded_file.name}")
+            st.rerun()
+    
+    rules_config = st.session_state.rules_config
+    
+    # 显示当前加载的规则来源
+    current_source = st.session_state.get('current_rules_source', '未知')
+    st.caption(f"📌 当前规则来源: `{current_source}`")
+    
+    # 显示规则文件信息
+    st.subheader("📋 规则配置信息")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("规则版本", rules_config.get('version', 'N/A'))
+    with col2:
+        st.metric("规则数量", len(rules_config.get('rules', [])))
+    with col3:
+        enabled_count = sum(1 for r in rules_config.get('rules', []) if r.get('enabled', True))
+        st.metric("已启用规则", enabled_count)
+    
+    st.info(f"📝 描述: {rules_config.get('description', '无描述')}")
+    
+    # 阈值参数设置
+    st.subheader("🎛️ 全局阈值参数")
+    thresholds = rules_config.get('thresholds', {})
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        snr_adj = st.number_input("SNR调整值", 
+                                   value=float(thresholds.get('snr_adjustment', 0)),
+                                   step=0.5,
+                                   format="%.1f")
+        thresholds['snr_adjustment'] = snr_adj
+    with col2:
+        dw1o_adj = st.number_input("DW1O峰值调整", 
+                                     value=float(thresholds.get('dw1o_peak_adjustment', 0)),
+                                     step=100.0,
+                                     format="%.0f")
+        thresholds['dw1o_peak_adjustment'] = dw1o_adj
+    with col3:
+        dw2o_adj = st.number_input("DW2O峰值调整", 
+                                     value=float(thresholds.get('dw2o_peak_adjustment', 0)),
+                                     step=100.0,
+                                     format="%.0f")
+        thresholds['dw2o_peak_adjustment'] = dw2o_adj
+    
+    rules_config['thresholds'] = thresholds
+    
+    # 默认返回值设置
+    st.subheader("🔢 默认返回值")
+    default_return = st.number_input("当没有规则匹配时的返回值", 
+                                     value=int(rules_config.get('default_return', 10002)),
+                                     step=1)
+    rules_config['default_return'] = default_return
+    
+    st.markdown("---")
+    
+    # 规则列表编辑
+    st.subheader("📜 分类规则列表")
+    
+    # 添加新规则按钮
+    if st.button("➕ 添加新规则"):
+        new_rule = {
+            "rule_id": max([r.get('rule_id', 0) for r in rules_config['rules']], default=0) + 1,
+            "name": "新规则",
+            "conditions": [],
+            "logic": "AND",
+            "return_value": 0,
+            "enabled": True
+        }
+        rules_config['rules'].append(new_rule)
+        st.success("✅ 已添加新规则")
+        st.rerun()
+    
+    # 可用特征列表
+    available_features = rules_config.get('available_features', [])
+    operators = ['>', '>=', '<', '<=', '==', '!=']
+    
+    # 通道组合映射（内部值 -> 显示名称）
+    channel_combinations_map = {
+        '': '无限制',
+        'D_only': 'DW1O通道单独',
+        'J_only': 'DW2O通道单独',
+        'P_only': 'DN1O通道单独',
+        'D_and_J': 'DW1O+DW2O组合',
+        'D_and_P': 'DW1O+DN1O组合',
+        'J_and_P': 'DW2O+DN1O组合',
+        'D_and_J_and_P': 'DW1O+DW2O+DN1O全通道'
+    }
+    channel_combinations = list(channel_combinations_map.keys())
+    
+    # 显示每条规则
+    rules_to_delete = []
+    for idx, rule in enumerate(rules_config['rules']):
+        with st.expander(f"🔖 规则 {rule.get('rule_id', idx+1)}: {rule.get('name', '未命名')} {'✅' if rule.get('enabled', True) else '❌'}"):
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                rule['name'] = st.text_input("规则名称", value=rule.get('name', ''), key=f"name_{idx}")
+            
+            with col2:
+                rule['enabled'] = st.checkbox("启用", value=rule.get('enabled', True), key=f"enabled_{idx}")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                rule['rule_id'] = st.number_input("规则ID", value=int(rule.get('rule_id', idx+1)), 
+                                                  step=1, key=f"id_{idx}")
+            with col2:
+                rule['return_value'] = st.number_input("返回值", value=int(rule.get('return_value', 0)), 
+                                                       step=1, key=f"return_{idx}")
+            with col3:
+                # 选择逻辑模式
+                use_complex_logic = st.checkbox("使用复杂逻辑表达式", 
+                                               value='logic_expression' in rule,
+                                               key=f"complex_{idx}",
+                                               help="启用后可以使用 &&、||、! 和括号组合条件")
+            
+            # 通道组合（可选）
+            current_combination = rule.get('channel_combination', '')
+            combination_index = channel_combinations.index(current_combination) if current_combination in channel_combinations else 0
+            
+            # 使用中文显示名称
+            selected_display = st.selectbox(
+                "通道组合限制（可选）", 
+                options=channel_combinations,
+                format_func=lambda x: channel_combinations_map.get(x, x),
+                index=combination_index,
+                key=f"channel_{idx}",
+                help="限制规则仅在特定通道组合下生效"
+            )
+            
+            if selected_display:
+                rule['channel_combination'] = selected_display
+            elif 'channel_combination' in rule:
+                del rule['channel_combination']
+            
+            # 逻辑设置
+            if use_complex_logic:
+                # 使用复杂逻辑表达式
+                st.info("💡 复杂逻辑表达式说明：使用条件ID组合，支持 && (AND)、|| (OR)、! (NOT) 和括号")
+                st.markdown("""
+                **示例**：
+                - `1 && 2` : 条件1 AND 条件2
+                - `1 || 2 || 3` : 条件1 OR 条件2 OR 条件3
+                - `1 && (2 || 3)` : 条件1 AND (条件2 OR 条件3)
+                - `(1 || 2) && !3` : (条件1 OR 条件2) AND NOT 条件3
+                - `1 && (2 || 3 || 4) && (!5)` : 条件1 AND (条件2 OR 条件3 OR 条件4) AND (NOT 条件5)
+                """)
+                
+                current_expression = rule.get('logic_expression', '')
+                rule['logic_expression'] = st.text_input(
+                    "逻辑表达式", 
+                    value=current_expression,
+                    key=f"logic_expr_{idx}",
+                    placeholder="例如: 1 && (2 || 3) && (!4)"
+                )
+                
+                # 删除简单逻辑字段
+                if 'logic' in rule:
+                    del rule['logic']
+            else:
+                # 使用简单逻辑
+                rule['logic'] = st.selectbox("逻辑关系", ['AND', 'OR'], 
+                                            index=0 if rule.get('logic', 'AND') == 'AND' else 1,
+                                            key=f"logic_{idx}",
+                                            help="AND: 所有条件都满足, OR: 任一条件满足")
+                
+                # 删除复杂逻辑字段
+                if 'logic_expression' in rule:
+                    del rule['logic_expression']
+            
+            # 条件列表
+            st.write("**条件列表:**")
+            
+            conditions = rule.get('conditions', [])
+            conditions_to_delete = []
+            use_complex = 'logic_expression' in rule
+            
+            for cond_idx, condition in enumerate(conditions):
+                # 如果使用复杂逻辑，显示条件ID
+                if use_complex:
+                    col0, col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1, 2, 1, 1])
+                    with col0:
+                        # 确保有condition_id
+                        if 'condition_id' not in condition:
+                            condition['condition_id'] = cond_idx + 1
+                        condition['condition_id'] = st.number_input("ID", 
+                                                                    value=int(condition.get('condition_id', cond_idx+1)),
+                                                                    min_value=1,
+                                                                    step=1,
+                                                                    key=f"cond_id_{idx}_{cond_idx}")
+                else:
+                    col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 1, 1])
+                    # 移除condition_id（简单逻辑不需要）
+                    if 'condition_id' in condition:
+                        del condition['condition_id']
+                
+                with col1:
+                    feature_index = available_features.index(condition['feature']) if condition['feature'] in available_features else 0
+                    condition['feature'] = st.selectbox("特征", available_features, 
+                                                       index=feature_index,
+                                                       key=f"feat_{idx}_{cond_idx}")
+                
+                with col2:
+                    op_index = operators.index(condition['operator']) if condition['operator'] in operators else 0
+                    condition['operator'] = st.selectbox("操作符", operators, 
+                                                        index=op_index,
+                                                        key=f"op_{idx}_{cond_idx}")
+                
+                with col3:
+                    condition['value'] = st.number_input("值", value=float(condition['value']), 
+                                                        step=0.1,
+                                                        key=f"val_{idx}_{cond_idx}")
+                
+                with col4:
+                    condition['use_threshold'] = st.checkbox("使用阈值", 
+                                                            value=condition.get('use_threshold', False),
+                                                            key=f"thresh_{idx}_{cond_idx}")
+                
+                with col5:
+                    if st.button("🗑️", key=f"del_cond_{idx}_{cond_idx}"):
+                        conditions_to_delete.append(cond_idx)
+            
+            # 删除标记的条件
+            for cond_idx in sorted(conditions_to_delete, reverse=True):
+                conditions.pop(cond_idx)
+            
+            rule['conditions'] = conditions
+            
+            # 添加新条件按钮
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("➕ 添加条件", key=f"add_cond_{idx}"):
+                    new_condition = {
+                        "feature": available_features[0] if available_features else "",
+                        "operator": ">",
+                        "value": 0,
+                        "use_threshold": False
+                    }
+                    # 如果使用复杂逻辑，添加condition_id
+                    if 'logic_expression' in rule:
+                        # 找到最大的condition_id
+                        max_id = max([c.get('condition_id', 0) for c in conditions], default=0)
+                        new_condition['condition_id'] = max_id + 1
+                    conditions.append(new_condition)
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ 删除此规则", key=f"del_rule_{idx}"):
+                    rules_to_delete.append(idx)
+                    st.rerun()
+    
+    # 删除标记的规则
+    for rule_idx in sorted(rules_to_delete, reverse=True):
+        rules_config['rules'].pop(rule_idx)
+    
+    st.markdown("---")
+    
+    # 保存按钮
+    st.subheader("💾 保存规则")
+    
+    # 保存方式选择
+    save_method = st.radio(
+        "选择保存方式",
+        ["💾 保存到文件路径", "⬇️ 下载JSON文件"],
+        horizontal=True,
+        key="save_method"
+    )
+    
+    if save_method == "💾 保存到文件路径":
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # 获取默认保存路径
+            default_save_path = st.session_state.get('current_rules_source', default_rules_path)
+            if not default_save_path.endswith('.json'):
+                default_save_path = default_rules_path
+            
+            save_path = st.text_input(
+                "保存文件路径", 
+                value=default_save_path, 
+                key="save_path",
+                help="输入完整的文件路径，例如：D:/streamlit/my_rules.json"
+            )
+        
+        with col2:
+            st.write("")
+            st.write("")
+            if st.button("💾 保存", type="primary", key="save_to_file"):
+                st.session_state.rules_config = rules_config
+                if rule_engine.save_rules_to_json(rules_config, save_path):
+                    st.success(f"✅ 规则已成功保存到:\n`{save_path}`")
+                    st.session_state.current_rules_source = save_path
+                    st.balloons()
+                else:
+                    st.error("❌ 保存失败，请检查文件路径是否正确")
+        
+        st.info("💡 **提示**: 保存后，您可以在`离线过漏检.py`中使用此规则文件")
+    
+    else:  # 下载JSON文件
+        st.write("点击下方按钮下载规则文件到本地：")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            download_filename = st.text_input(
+                "文件名", 
+                value="classification_rules_export.json",
+                key="download_filename",
+                help="设置下载的文件名"
+            )
+        
+        with col2:
+            st.write("")
+            st.write("")
+            # 生成JSON字符串
+            json_str = json.dumps(rules_config, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="⬇️ 下载JSON",
+                data=json_str,
+                file_name=download_filename,
+                mime="application/json",
+                type="primary",
+                key="download_json"
+            )
+        
+        st.info("💡 **提示**: 下载后，您可以将文件放置到工作目录，然后在规则编辑器中重新加载")
+    
+    st.markdown("---")
+    
+    # 规则预览
+    st.subheader("👁️ 规则JSON预览")
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        show_full_json = st.checkbox("显示完整JSON", value=False, key="show_full_json")
+    with col2:
+        if st.button("📋 复制JSON到剪贴板", key="copy_json_btn"):
+            st.code(json.dumps(rules_config, ensure_ascii=False, indent=2), language="json")
+            st.info("💡 请选中上方代码框的内容，然后按 Ctrl+C 复制")
+    
+    if show_full_json:
+        st.json(rules_config)
+    else:
+        with st.expander("点击展开查看完整JSON"):
+            st.json(rules_config)
