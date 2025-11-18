@@ -8,4 +8,5 @@ Pillow
 openpyxl
 opencv-python-headless
 scipy
+xlsxwriter
 
