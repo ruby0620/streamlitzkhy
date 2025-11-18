@@ -278,7 +278,7 @@
   "default_return": 10002,
   "thresholds": {
     "snr_adjustment": -3,
-    "dw1o_peak_adjustment": -8000,
-    "dw2o_peak_adjustment": -8000
+    "dw1o_peak_adjustment": 0,
+    "dw2o_peak_adjustment": 0
   }
 }

@@ -9,6 +9,11 @@ from plotly.subplots import make_subplots
 import os
 import glob
 import copy
+from pathlib import Path
+import re
+import traceback
+import json
+import io
 try:
     from PIL import Image
 except ImportError:
@@ -21,476 +26,1544 @@ plt.rcParams['axes.unicode_minus'] = False
 # 设置页面配置
 st.set_page_config(
     page_title="缺陷数据分析", 
+    page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# 自定义CSS样式
+st.markdown("""
+<style>
+    /* 主标题样式 */
+    .main-title {
+        font-size: 3rem;
+        font-weight: 700;
+        background: linear-gradient(120deg, #2193b0, #6dd5ed);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        padding: 1rem 0;
+        margin-bottom: 2rem;
+    }
+    
+    /* 分隔线样式 - 渐变色 */
+    .gradient-divider {
+        height: 3px;
+        background: linear-gradient(90deg, 
+            rgba(33, 147, 176, 0) 0%, 
+            rgba(33, 147, 176, 0.8) 20%, 
+            rgba(109, 213, 237, 1) 50%, 
+            rgba(33, 147, 176, 0.8) 80%, 
+            rgba(33, 147, 176, 0) 100%);
+        margin: 2rem 0;
+        border: none;
+    }
+    
+    /* 点状分隔线 */
+    .dotted-divider {
+        border: none;
+        border-top: 3px dotted #6dd5ed;
+        margin: 2rem 0;
+        opacity: 0.6;
+    }
+    
+    /* 虚线分隔线 */
+    .dashed-divider {
+        border: none;
+        border-top: 2px dashed #2193b0;
+        margin: 1.5rem 0;
+        opacity: 0.5;
+    }
+    
+    /* 卡片式容器 */
+    .card-container {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2px;
+        border-radius: 15px;
+        margin: 1rem 0;
+    }
+    
+    .card-content {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 14px;
+    }
+    
+    /* 功能区块标题 */
+    .section-header {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #2193b0;
+        padding: 1rem 0;
+        border-left: 5px solid #6dd5ed;
+        padding-left: 1rem;
+        margin: 2rem 0 1rem 0;
+    }
+    
+    /* 侧边栏美化 */
+    .sidebar .sidebar-content {
+        background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+    
+    /* 按钮hover效果 */
+    .stButton>button {
+        transition: all 0.3s ease;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(33, 147, 176, 0.3);
+    }
+    
+    /* Metric容器美化 */
+    [data-testid="stMetricValue"] {
+        font-size: 2rem;
+        font-weight: 600;
+        color: #2193b0;
+    }
+    
+    /* Tab标签美化 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        padding: 0 25px;
+        background-color: #f0f2f6;
+        border-radius: 10px 10px 0 0;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white !important;
+    }
+    
+    /* 信息框美化 */
+    .stAlert {
+        border-radius: 10px;
+        border-left: 5px solid;
+    }
+    
+    /* 波浪分隔线 */
+    .wave-divider {
+        height: 20px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z' fill='%236dd5ed' opacity='0.3'%3E%3C/path%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        margin: 2rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # 侧边栏导航索引
-st.sidebar.title("📑 功能导航")
-st.sidebar.markdown("---")
+st.sidebar.markdown("""
+<div style='text-align: center; padding: 1rem 0;'>
+    <h1 style='color: #2193b0; margin: 0;'>📑 功能导航</h1>
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown('<hr class="gradient-divider">', unsafe_allow_html=True)
 
 # 主要功能模块
-st.sidebar.subheader("🔍 主要功能")
 st.sidebar.markdown("""
+<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
+    <h3 style='color: white; margin: 0;'>🔍 主要功能</h3>
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown("""
+<div style='padding-left: 1rem;'>
+
 - [📁 过漏检分析](#过漏检分析)
 - [🖼️ 图像查看](#图像查看)
 - [✂️ 区域过滤](#区域过滤)
-""")
+- [⚙️ 规则编辑器](#规则编辑器)
+- [🔧 初始化处理工具](#初始化处理工具)
 
-st.sidebar.markdown("---")
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown('<hr class="dotted-divider">', unsafe_allow_html=True)
 
 # 过漏检分析子功能
-st.sidebar.subheader("📁 过漏检分析功能")
 st.sidebar.markdown("""
+<div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+            padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
+    <h3 style='color: white; margin: 0;'>📁 过漏检分析</h3>
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown("""
+<div style='padding-left: 1rem;'>
+
 **文件夹对比：**
 - [🌐 多文件夹晶圆图](#多文件夹晶圆图)
 - [🔗 缺陷坐标匹配](#缺陷坐标匹配分析)
 
 **KLA匹配分析：**
 - [📊 过漏检统计](#过漏检统计)
-- [📏 DSIZE尺寸分析](#DSIZE尺寸分析)
-- [📐 过检尺寸分布](#过检尺寸分布)
 - [🔢 按尺寸区间统计](#按尺寸区间统计)
-- [📊 MaxOrg比值分析](#MaxOrg比值分析)
-- [🔍 MaxOrg65532统计](#MaxOrg65532统计)
-- [📈 DW1O通道比值](#DW1O通道比值)
-- [💡 BGMean值分布](#BGMean值分布)
-- [📋 BGMean汇总表](#BGMean汇总表)
-- [� TotalSNR尺寸分布](#TotalSNR尺寸分布)
-- [�🔄 共有率分析](#共有率分析)
-""")
+- [🔄 共有率分析](#共有率分析)
 
-st.sidebar.markdown("---")
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown('<hr class="dotted-divider">', unsafe_allow_html=True)
 
 # 系统信息
-st.sidebar.subheader("ℹ️ 系统信息")
-st.sidebar.info("""
-**缺陷数据分析系统 v3.0**
+st.sidebar.markdown("""
+<div style='background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); 
+            padding: 1.5rem; border-radius: 15px; margin: 1rem 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+    <h3 style='color: #2193b0; margin-top: 0;'>ℹ️ 系统信息</h3>
+    <p style='margin: 0.5rem 0; color: #333;'><strong>缺陷数据分析系统 v3.0</strong></p>
+    <hr style='border: none; border-top: 1px solid rgba(33, 147, 176, 0.3); margin: 1rem 0;'>
+    <p style='margin: 0.3rem 0; color: #555;'>✅ 过漏检综合分析</p>
+    <p style='margin: 0.3rem 0; color: #555;'>✅ TIFF图像查看</p>
+    <p style='margin: 0.3rem 0; color: #555;'>✅ 区域过滤</p>
+    <p style='margin: 0.3rem 0; color: #555;'>✅ 规则编辑器</p>
+    <p style='margin: 0.3rem 0; color: #555;'>✅ KLARF文件解析</p>
+</div>
+""", unsafe_allow_html=True)
 
-支持功能：
-- 过漏检综合分析
-- TIFF图像查看
-- 区域过滤
-""")
+# 分隔线辅助函数
+def show_divider(style="gradient"):
+    """
+    显示不同样式的分隔线
+    
+    Args:
+        style: 分隔线样式 - "gradient"(渐变), "dotted"(点状), "dashed"(虚线), "wave"(波浪)
+    """
+    if style == "gradient":
+        st.markdown('<hr class="gradient-divider">', unsafe_allow_html=True)
+    elif style == "dotted":
+        st.markdown('<hr class="dotted-divider">', unsafe_allow_html=True)
+    elif style == "dashed":
+        st.markdown('<hr class="dashed-divider">', unsafe_allow_html=True)
+    elif style == "wave":
+        st.markdown('<div class="wave-divider"></div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<hr class="gradient-divider">', unsafe_allow_html=True)
 
 # 主标题
-st.title("缺陷数据分析系统")
+st.markdown('<h1 class="main-title">🔬 缺陷数据分析</h1>', unsafe_allow_html=True)
+show_divider("wave")
 
 # 创建标签页
-tab1, tab2, tab3, tab4 = st.tabs(["📁 过漏检分析", "🖼️ 图像查看", "✂️ 区域过滤", "⚙️ 规则编辑器"])
-
-with tab2:
-    st.markdown('<a name="图像查看"></a>', unsafe_allow_html=True)
-    st.header("🖼️ TIFF图像查看器")
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔧 初始化处理工具", "⚙️ 规则编辑器", "📁 过漏检分析", "🖼️ 图像查看", "✂️ 区域过滤" ])
+# 第1个标签页 - 初始化处理工具
+with tab1:
+    st.header("🔧 初始化处理工具")
     
-    # 文件夹选择
-    folder_path = st.text_input("请输入包含TIFF图像的文件夹路径", 
-                               placeholder="例如: D:/images/tiff_folder")
+    with st.expander("ℹ️ 功能说明", expanded=False):
+        st.markdown("""
+        **KLARF文件解析**：批量解析文件夹中的KLARF文件并存储excel
+        - 支持导出为Excel文件，可在页面预览
+        """)
     
-    if folder_path:
-        try:
-            if Image is None:
-                st.error("请安装PIL库: pip install Pillow")
-                st.stop()
-            
-            # 检查文件夹是否存在
-            if not os.path.exists(folder_path):
-                st.error("文件夹路径不存在，请检查路径是否正确")
-            else:
-                # 搜索TIFF文件
-                tiff_patterns = [
-                    os.path.join(folder_path, "*-DN1O.tiff"),
-                    os.path.join(folder_path, "*-DN1O.TIFF"),
-                    os.path.join(folder_path, "*-DW1O.tiff"), 
-                    os.path.join(folder_path, "*-DW1O.TIFF"),
-                    os.path.join(folder_path, "*-DW2O.tiff"),
-                    os.path.join(folder_path, "*-DW2O.TIFF")
-                ]
-                
-                all_files = []
-                for pattern in tiff_patterns:
-                    all_files.extend(glob.glob(pattern))
-                
-                if not all_files:
-                    st.warning("在指定文件夹中未找到符合格式的TIFF文件")
-                    st.info("文件格式应为: ID-DN1O.tiff, ID-DW1O.tiff, ID-DW2O.tiff")
-                else:
-                    st.success(f"找到 {len(all_files)} 个TIFF文件")
-                    
-                    # 解析文件并按ID分组
-                    @st.cache_data
-                    def parse_tiff_files(file_list):
-                        file_groups = {}
-                        
-                        for file_path in file_list:
-                            filename = os.path.basename(file_path)
+    # KLARF文件解析
+    st.subheader("📄 1. KLARF文件解析")
+    
+    klarf_folder = st.text_input(
+        "请输入包含KLARF文件的文件夹路径",
+        key="klarf_folder_path",
+        help="文件夹中应包含多个KLARF格式文件"
+    )
+    
+    if klarf_folder and os.path.exists(klarf_folder):
+        if st.button("🚀 开始解析KLARF文件", type="primary", key="parse_klarf_btn"):
+            with st.spinner("正在解析KLARF文件..."):
+                try:
+                    # KLARF解析器类
+                    class KLARFParser:
+                        def __init__(self, folder_path):
+                            """
+                            初始化解析器
                             
-                            # 解析文件名格式：ID-通道.tiff
-                            if '-DN1O.' in filename.upper():
-                                channel = 'DN1O'
-                                file_id = filename.split('-DN1O.')[0]
-                            elif '-DW1O.' in filename.upper():
-                                channel = 'DW1O'
-                                file_id = filename.split('-DW1O.')[0]
-                            elif '-DW2O.' in filename.upper():
-                                channel = 'DW2O'
-                                file_id = filename.split('-DW2O.')[0]
-                            else:
-                                continue
+                            Args:
+                                folder_path: 包含KLARF文件的文件夹路径
+                            """
+                            self.folder_path = folder_path
+                            # 默认字段名（17字段格式）
+                            self.field_names = [
+                                'DEFECTID', 'XREL', 'YREL', 'XINDEX', 'YINDEX', 
+                                'XSIZE', 'YSIZE', 'DEFECTAREA', 'DSIZE', 'CLASSNUMBER', 
+                                'TEST', 'CLUSTERNUMBER', 'ROUGHBINNUMBER', 'FINEBINNUMBER', 
+                                'REVIEWSAMPLE', 'IMAGECOUNT', 'IMAGELIST'
+                            ]
+                            # 当前文件的字段名（从DefectRecordSpec中读取）
+                            self.current_field_names = None
+                        
+                        def extract_slot_from_content(self, file_path):
+                            """
+                            从KLARF文件内容中提取Slot编号
                             
-                            if file_id not in file_groups:
-                                file_groups[file_id] = {}
+                            Args:
+                                file_path: KLARF文件路径
+                                
+                            Returns:
+                                Slot编号字符串，如果未找到则返回文件名
+                            """
+                            try:
+                                with open(file_path, 'r', encoding='utf-8') as file:
+                                    for line in file:
+                                        line = line.strip()
+                                        # 查找 Slot 行，格式如: Slot 11;
+                                        if line.startswith('Slot'):
+                                            parts = line.split()
+                                            if len(parts) >= 2:
+                                                slot_num = parts[1].rstrip(';')
+                                                return slot_num
+                            except Exception as e:
+                                st.warning(f"读取文件 {Path(file_path).name} 的Slot信息时出错: {str(e)}")
                             
-                            file_groups[file_id][channel] = file_path
+                            # 如果没有找到Slot信息，使用文件名
+                            return Path(file_path).stem
                         
-                        return file_groups
-                    
-                    file_groups = parse_tiff_files(all_files)
-                    
-                    # 显示文件统计
-                    st.subheader("文件统计")
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("总ID数量", len(file_groups))
-                    with col2:
-                        dn1o_count = sum(1 for group in file_groups.values() if 'DN1O' in group)
-                        st.metric("DN1O图像", dn1o_count)
-                    with col3:
-                        dw1o_count = sum(1 for group in file_groups.values() if 'DW1O' in group)
-                        st.metric("DW1O图像", dw1o_count)
-                    with col4:
-                        dw2o_count = sum(1 for group in file_groups.values() if 'DW2O' in group)
-                        st.metric("DW2O图像", dw2o_count)
-                    
-                    # 按ID排序（数字排序）
-                    sorted_ids = sorted(file_groups.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
-                    
-                    # 初始化session state
-                    if 'current_id_index' not in st.session_state:
-                        st.session_state.current_id_index = 0
-                    if 'folder_path' not in st.session_state:
-                        st.session_state.folder_path = folder_path
-                    
-                    # 如果文件夹路径改变，重置索引
-                    if st.session_state.folder_path != folder_path:
-                        st.session_state.current_id_index = 0
-                        st.session_state.folder_path = folder_path
-                    
-                    # 确保索引在有效范围内
-                    if st.session_state.current_id_index >= len(sorted_ids):
-                        st.session_state.current_id_index = len(sorted_ids) - 1 if sorted_ids else 0
-                    elif st.session_state.current_id_index < 0:
-                        st.session_state.current_id_index = 0
-                    
-                    # ID选择和导航
-                    st.subheader("批量浏览控制")
-                    
-                    # 导航按钮 - 使用表单来确保按钮点击被正确处理
-                    with st.form("navigation_form", clear_on_submit=False):
-                        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
-                        
-                        with col1:
-                            first_btn = st.form_submit_button("⏮️ 第一个")
-                        
-                        with col2:
-                            prev_disabled = st.session_state.current_id_index <= 0
-                            prev_btn = st.form_submit_button("⬅️ 上一个", disabled=prev_disabled)
-                        
-                        with col3:
-                            next_disabled = st.session_state.current_id_index >= len(sorted_ids) - 1
-                            next_btn = st.form_submit_button("➡️ 下一个", disabled=next_disabled)
-                        
-                        with col4:
-                            last_btn = st.form_submit_button("⏭️ 最后一个")
-                        
-                        with col5:
-                            # 进度条和当前状态
-                            if sorted_ids:
-                                progress = (st.session_state.current_id_index + 1) / len(sorted_ids)
-                                st.progress(progress)
-                                current_id = sorted_ids[st.session_state.current_id_index]
-                                st.write(f"**{st.session_state.current_id_index + 1} / {len(sorted_ids)}** (ID: {current_id})")
-                    
-                    # 处理按钮点击
-                    if first_btn:
-                        st.session_state.current_id_index = 0
-                        st.rerun()
-                    elif prev_btn and not prev_disabled:
-                        st.session_state.current_id_index = max(0, st.session_state.current_id_index - 1)
-                        st.rerun()
-                    elif next_btn and not next_disabled:
-                        st.session_state.current_id_index = min(len(sorted_ids) - 1, st.session_state.current_id_index + 1)
-                        st.rerun()
-                    elif last_btn:
-                        st.session_state.current_id_index = len(sorted_ids) - 1
-                        st.rerun()
-                    
-                    
-                    # ID选择下拉框
-                    # st.subheader("选择特定ID")
-                    # col1, col2 = st.columns([3, 1])
-                    # with col1:
-                    #     # 创建ID选择框
-                    #     selected_index = st.selectbox(
-                    #         "跳转到特定ID", 
-                    #         range(len(sorted_ids)),
-                    #         index=st.session_state.current_id_index,
-                    #         format_func=lambda x: f"ID: {sorted_ids[x]}",
-                    #         key="id_selectbox",
-                    #         help="直接选择要查看的ID"
-                    #     )
-                        
-                        # 如果选择框的值改变了，更新session state
-                        # if selected_index != st.session_state.current_id_index:
-                        #     st.session_state.current_id_index = selected_index
-                        #     st.rerun()
-                    
-                    with col2:
-                        auto_enhance = st.checkbox("自动增强显示", value=True, help="自动调整16位图像的显示对比度")
-                    
-                    # 当前选择的ID
-                    selected_id = sorted_ids[st.session_state.current_id_index] if sorted_ids else None
-                    
-                    # 高级显示选项
-                    with st.expander("高级显示选项"):
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            percentile_low = st.slider("对比度下限百分位", 0.0, 5.0, 1.0, 0.1, help="用于对比度拉伸的下限百分位")
-                        with col2:
-                            percentile_high = st.slider("对比度上限百分位", 95.0, 100.0, 100.0, 0.1, help="用于对比度拉伸的上限百分位")
-                        with col3:
-                            gamma_value = st.slider("伽马校正", 0.1, 3.0, 1.1, 0.1, help="调整图像亮度和对比度")
-                    
-                    if selected_id and selected_id in file_groups:
-                        st.subheader(f"ID: {selected_id} 的图像")
-                        
-                        # 获取该ID的所有通道图像
-                        channels = ['DN1O', 'DW1O', 'DW2O']
-                        available_channels = [ch for ch in channels if ch in file_groups[selected_id]]
-                        
-                        if available_channels:
-                            # 显示图像信息
-                            with st.expander("图像信息"):
-                                for channel in available_channels:
-                                    file_path = file_groups[selected_id][channel]
-                                    st.write(f"**{channel}**: {os.path.basename(file_path)}")
+                        def parse_klarf_file(self, file_path):
+                            """
+                            解析单个KLARF文件
                             
-                            # 读取和显示图像
-                            def load_and_process_16bit_tiff(file_path, enhance=True, p_low=1.0, p_high=99.0, gamma=1.0):
-                                """加载16位TIFF图像并处理为可显示的格式（类似ImageJ）"""
-                                try:
-                                    # 使用PIL读取16位TIFF
-                                    img = Image.open(file_path)
+                            Args:
+                                file_path: KLARF文件路径
+                                
+                            Returns:
+                                包含解析数据的列表
+                            """
+                            klarf_data = []
+                            
+                            try:
+                                with open(file_path, 'r', encoding='utf-8') as file:
+                                    # 重置当前字段名
+                                    self.current_field_names = None
                                     
-                                    # 转换为numpy数组
-                                    img_array = np.array(img, dtype=np.float64)  # 使用float64保持精度
+                                    # 查找DefectRecordSpec和DefectList
+                                    defect_list_found = False
                                     
-                                    if enhance:
-                                        # 使用用户指定的百分位数进行对比度调整
-                                        p_low_val, p_high_val = np.percentile(img_array, (p_low, p_high))
+                                    for line in file:
+                                        line = line.strip()
                                         
-                                        # 如果上下限相同，使用min和max
-                                        if p_high_val - p_low_val == 0:
-                                            p_low_val, p_high_val = img_array.min(), img_array.max()
+                                        # 解析DefectRecordSpec获取字段名
+                                        if line.startswith('DefectRecordSpec'):
+                                            parts = line.split()
+                                            if len(parts) > 2:
+                                                # 获取字段名（从第3个元素开始到分号前）
+                                                field_names = []
+                                                for part in parts[2:]:
+                                                    if part == ';':
+                                                        break
+                                                    field_names.append(part)
+                                                self.current_field_names = field_names
+                                            continue
                                         
-                                        if p_high_val - p_low_val > 0:
-                                            # 对比度拉伸
-                                            img_normalized = (img_array - p_low_val) / (p_high_val - p_low_val)
-                                            img_normalized = np.clip(img_normalized, 0, 1)
-                                        else:
-                                            img_normalized = img_array / img_array.max() if img_array.max() > 0 else img_array
+                                        # 找到DefectList行，下一行开始是数据
+                                        if line == 'DefectList':
+                                            defect_list_found = True
+                                            continue
                                         
-                                        # 应用用户指定的伽马校正
-                                        if gamma != 1.0:
-                                            img_normalized = np.power(img_normalized, 1.0/gamma)  # 注意伽马的倒数
+                                        # 只有在找到DefectList后才开始处理数据
+                                        if not defect_list_found:
+                                            continue
                                         
-                                        # 转换为8位
-                                        img_enhanced = (img_normalized * 255).astype(np.uint8)
-                                    else:
-                                        # 简单的线性缩放，保持16位到8位的线性关系
-                                        max_val = img_array.max()
-                                        if max_val > 0:
-                                            if max_val <= 255:
-                                                img_enhanced = img_array.astype(np.uint8)
-                                            else:
-                                                # 16位到8位的线性映射
-                                                img_enhanced = (img_array / 65535.0 * 255).astype(np.uint8)
-                                        else:
-                                            img_enhanced = img_array.astype(np.uint8)
-                                    
-                                    # 返回处理后的图像、原始数组（用于统计）、形状和统计信息
-                                    return img_enhanced, img_array.shape, (img_array.min(), img_array.max(), img_array.mean()), p_low_val if enhance else None, p_high_val if enhance else None
+                                        # 跳过空行
+                                        if not line:
+                                            continue
+                                        
+                                        # 检查是否是其他关键字（结束当前DefectList）
+                                        if line.startswith('TiffFileName') or line.startswith('ProcessEquipmentIDList'):
+                                            defect_list_found = False
+                                            continue
+                                        
+                                        # 检查是否是数据结束（以分号结尾）
+                                        is_last_line = line.endswith(';')
+                                        if is_last_line:
+                                            # 移除末尾的分号
+                                            line = line.rstrip(';')
+                                            defect_list_found = False  # 重置标志，准备处理下一个DefectList
+                                        
+                                        # 如果移除分号后是空行，跳过
+                                        if not line.strip():
+                                            continue
+                                        
+                                        # 分割数据行（按空格分割）
+                                        parts = line.split()
+                                        
+                                        # 使用当前字段名或默认字段名
+                                        field_names = self.current_field_names if self.current_field_names else self.field_names
+                                        
+                                        # 检查字段数量是否匹配
+                                        if len(parts) >= len(self.field_names):
+                                            # 创建数据字典（只取前17个标准字段）
+                                            data_dict = {}
+                                            for i, field_name in enumerate(self.field_names):
+                                                value_str = parts[i]
+                                                
+                                                # 判断数据类型：如果包含小数点，使用float，否则使用int
+                                                if '.' in value_str:
+                                                    data_dict[field_name] = float(value_str)
+                                                else:
+                                                    data_dict[field_name] = int(value_str)
+                                            
+                                            klarf_data.append(data_dict)
                                 
-                                except Exception as e:
-                                    st.error(f"读取图像失败: {str(e)}")
-                                    return None, None, None, None, None
+                            except Exception as e:
+                                st.error(f"解析文件 {Path(file_path).name} 时出错: {str(e)}")
                             
-                            # 创建列布局显示图像
-                            if len(available_channels) == 1:
-                                # 单张图像
-                                channel = available_channels[0]
-                                file_path = file_groups[selected_id][channel]
-                                
-                                result = load_and_process_16bit_tiff(file_path, auto_enhance, percentile_low, percentile_high, gamma_value)
-                                img_processed, img_shape, img_stats, p_low_val, p_high_val = result
-                                
-                                if img_processed is not None:
-                                    st.write(f"**{channel} 通道**")
-                                    caption = f"{channel} - 形状: {img_shape}"
-                                    if auto_enhance and p_low_val is not None:
-                                        caption += f", 显示范围: {p_low_val:.0f}-{p_high_val:.0f}"
-                                    caption += f", 原始范围: {img_stats[0]:.0f}-{img_stats[1]:.0f}, 平均值: {img_stats[2]:.1f}"
-                                    st.image(img_processed, caption=caption)
-                            
-                            elif len(available_channels) == 2:
-                                # 两张图像
-                                col1, col2 = st.columns(2)
-                                
-                                for i, channel in enumerate(available_channels):
-                                    file_path = file_groups[selected_id][channel]
-                                    result = load_and_process_16bit_tiff(file_path, auto_enhance, percentile_low, percentile_high, gamma_value)
-                                    img_processed, img_shape, img_stats, p_low_val, p_high_val = result
-                                    
-                                    if img_processed is not None:
-                                        with [col1, col2][i]:
-                                            st.write(f"**{channel} 通道**")
-                                            st.image(img_processed, caption=f"{channel}")
-                                            with st.expander(f"{channel} 详细信息"):
-                                                st.write(f"图像尺寸: {img_shape}")
-                                                st.write(f"原始值范围: {img_stats[0]:.0f} - {img_stats[1]:.0f}")
-                                                st.write(f"平均值: {img_stats[2]:.1f}")
-                                                if auto_enhance and p_low_val is not None:
-                                                    st.write(f"显示范围: {p_low_val:.0f} - {p_high_val:.0f}")
-                                                    st.write(f"对比度拉伸: {percentile_low}% - {percentile_high}%")
-                            
-                            else:
-                                # 三张图像（标准情况）
-                                col1, col2, col3 = st.columns(3)
-                                columns = [col1, col2, col3]
-                                
-                                for i, channel in enumerate(available_channels):
-                                    file_path = file_groups[selected_id][channel]
-                                    result = load_and_process_16bit_tiff(file_path, auto_enhance, percentile_low, percentile_high, gamma_value)
-                                    img_processed, img_shape, img_stats, p_low_val, p_high_val = result
-                                    
-                                    if img_processed is not None:
-                                        with columns[i]:
-                                            st.write(f"**{channel} 通道**")
-                                            st.image(img_processed, caption=f"{channel}")
-                                            with st.expander(f"{channel} 详细信息"):
-                                                st.write(f"图像尺寸: {img_shape}")
-                                                st.write(f"原始值范围: {img_stats[0]:.0f} - {img_stats[1]:.0f}")
-                                                st.write(f"平均值: {img_stats[2]:.1f}")
-                                                if auto_enhance and p_low_val is not None:
-                                                    st.write(f"显示范围: {p_low_val:.0f} - {p_high_val:.0f}")
-                                                    st.write(f"伽马校正: {gamma_value}")
-                                                    st.write(f"对比度百分位: {percentile_low}% - {percentile_high}%")
-                            
-
-                            
-                            # 使用提示
-                            st.caption("💡 提示：使用上方的导航按钮或快速跳转功能切换图像")
+                            return klarf_data
                         
-                        else:
-                            st.warning(f"ID {selected_id} 没有找到任何通道的图像")
+                        def parse_all_files(self):
+                            """
+                            解析文件夹中所有KLARF文件
+                            
+                            Returns:
+                                字典，key为sheet名称(Slot编号)，value为DataFrame
+                            """
+                            all_data = {}
+                            
+                            # 获取文件夹中所有KLARF文件（包括.001, .002等数字后缀）
+                            klarf_files = []
+                            
+                            # 搜索常见的KLARF文件扩展名
+                            for ext in ['*.klarf', '*.KLARF', '*.txt', '*.TXT', '*.001', '*.002', '*.003']:
+                                klarf_files.extend(Path(self.folder_path).glob(ext))
+                            
+                            # 搜索文件名包含klarf或slot的所有文件（包括无扩展名的文件）
+                            for file in Path(self.folder_path).iterdir():
+                                if file.is_file():
+                                    filename_lower = file.name.lower()
+                                    # 包含klarf或者slot的文件，且不在已有列表中
+                                    if ('klarf' in filename_lower or 'slot' in filename_lower) and file not in klarf_files:
+                                        klarf_files.append(file)
+                            
+                            if not klarf_files:
+                                st.warning(f"在文件夹 {self.folder_path} 中未找到KLARF文件")
+                                return all_data
+                            
+                            st.info(f"找到 {len(klarf_files)} 个KLARF文件")
+                            
+                            # 解析每个文件
+                            progress_bar = st.progress(0)
+                            for idx, file_path in enumerate(klarf_files):
+                                # 从文件内容中提取Slot编号
+                                slot_name = self.extract_slot_from_content(file_path)
+                                
+                                # st.text(f"正在解析: {file_path.name} (Slot {slot_name})...")
+                                
+                                # 解析文件
+                                data = self.parse_klarf_file(file_path)
+                                
+                                # 如果有数据，转换为DataFrame
+                                if data:
+                                    df = pd.DataFrame(data)
+                                    # 使用slot编号作为key（格式：slot1, slot2等），如果有重复，添加文件名后缀
+                                    key = f"slot{slot_name}"
+                                    counter = 1
+                                    original_key = key
+                                    while key in all_data:
+                                        key = f"{original_key}_{counter}"
+                                        counter += 1
+                                    
+                                    all_data[key] = df
+                                    # st.success(f"✓ 文件 {file_path.name} 成功读取 {len(data)} 条数据记录 (Slot {slot_name})")
+                                else:
+                                    st.warning(f"⚠ 文件 {file_path.name} 未读取到数据")
+                                
+                                # 更新进度条
+                                progress_bar.progress((idx + 1) / len(klarf_files))
+                            
+                            progress_bar.empty()
+                            return all_data
                     
-                    # 显示所有ID的概览
-                    with st.expander("所有ID概览"):
-                        st.write("可用的ID和对应的通道:")
+                    # 创建解析器并解析
+                    parser = KLARFParser(klarf_folder)
+                    parsed_data = parser.parse_all_files()
+                    
+                    if parsed_data:
+                        st.success(f"✅ 成功解析 {len(parsed_data)} 个Slot的数据")
                         
-                        overview_data = []
-                        for file_id in sorted_ids:
-                            channels_available = list(file_groups[file_id].keys())
-                            overview_data.append({
-                                'ID': file_id,
-                                'DN1O': '✓' if 'DN1O' in channels_available else '✗',
-                                'DW1O': '✓' if 'DW1O' in channels_available else '✗',
-                                'DW2O': '✓' if 'DW2O' in channels_available else '✗',
-                                '文件数': len(channels_available)
+                        # 保存到session state
+                        st.session_state.klarf_parsed_data = parsed_data
+                        
+                        # 显示数据预览
+                        st.subheader("📊 数据预览")
+                        
+                        # 选择要查看的Sheet
+                        selected_sheet = st.selectbox(
+                            "选择要查看的Slot",
+                            options=list(parsed_data.keys()),
+                            key="preview_sheet_selector"
+                        )
+                        
+                        if selected_sheet:
+                            df_preview = parsed_data[selected_sheet]
+                            st.write(f"**{selected_sheet}** 数据概况：")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("总记录数", len(df_preview))
+                            with col2:
+                                st.metric("字段数", len(df_preview.columns))
+                            with col3:
+                                # 统计数据类型数量
+                                dtype_counts = df_preview.dtypes.value_counts()
+                                dtype_list = []
+                                for dt, count in dtype_counts.items():
+                                    # 简化dtype名称显示
+                                    dtype_name = str(dt).replace('dtype(\'', '').replace('\')', '')
+                                    dtype_list.append(f"{dtype_name}: {count}")
+                                st.write("**数据类型：**")
+                                st.write(", ".join(dtype_list))
+                            
+                            # 显示数据表格
+                            st.dataframe(df_preview, use_container_width=True, height=400)
+                            
+                            # 显示统计信息
+                            with st.expander("查看数据统计信息"):
+                                st.write(df_preview.describe())
+                        
+                        # 导出为Excel
+                        st.subheader("💾 导出数据")
+                        
+                        # 显示汇总信息
+                        st.write("**Excel文件将包含以下Sheet：**")
+                        
+                        # 对sheet名称进行排序（按slot编号从小到大）
+                        def get_slot_number(sheet_name):
+                            """从sheet名称中提取slot编号用于排序"""
+                            import re
+                            match = re.search(r'slot(\d+)', sheet_name, re.IGNORECASE)
+                            if match:
+                                return int(match.group(1))
+                            return 999999  # 无法解析的放在最后
+                        
+                        sorted_sheet_names = sorted(parsed_data.keys(), key=get_slot_number)
+                        
+                        summary_data = []
+                        total_records = 0
+                        for sheet_name in sorted_sheet_names:
+                            df = parsed_data[sheet_name]
+                            record_count = len(df)
+                            total_records += record_count
+                            summary_data.append({
+                                "Sheet名称": sheet_name,
+                                "记录数": record_count,
+                                "字段数": len(df.columns)
                             })
                         
-                        overview_df = pd.DataFrame(overview_data)
-                        st.dataframe(overview_df, use_container_width=True)
-
-    # 快速跳转功能
-                    st.subheader("快速跳转")
-                    # 先获取跳转步长
-                    jump_step = st.number_input("跳转步长", min_value=1, max_value=10, value=5, key="jump_step_input")
+                        summary_df = pd.DataFrame(summary_data)
+                        st.dataframe(summary_df, use_container_width=True)
+                        st.info(f"📊 总计：{len(parsed_data)} 个Sheet，共 {total_records} 条记录")
+                        
+                        # 创建Excel文件（按排序后的顺序写入）
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            for sheet_name in sorted_sheet_names:
+                                df = parsed_data[sheet_name]
+                                # Excel sheet名称限制为31个字符
+                                safe_sheet_name = sheet_name[:31]
+                                df.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+                        
+                        excel_data = output.getvalue()
+                        
+                        # 下载按钮
+                        st.download_button(
+                            label="📥 下载Excel文件（所有Slot合并在不同Sheet中）",
+                            data=excel_data,
+                            file_name=f"KLARF_parsed_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="download_klarf_excel",
+                            help=f"包含 {len(parsed_data)} 个Sheet，共 {total_records} 条记录"
+                        )
+                        
+                    else:
+                        st.warning("未能解析到任何数据")
                     
-                    # 使用按钮进行跳转（不用表单，直接用按钮）
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.write(f"当前显示: ID {sorted_ids[st.session_state.current_id_index] if sorted_ids else 'None'}")
-                    
-                    with col2:
-                        if st.button(f"⏪ 后退 {jump_step} 个", key="jump_back_btn"):
-                            new_index = max(0, st.session_state.current_id_index - jump_step)
-                            st.session_state.current_id_index = new_index
-                            st.rerun()
-                    
-                    with col3:
-                        if st.button(f"⏩ 前进 {jump_step} 个", key="jump_forward_btn"):
-                            new_index = min(len(sorted_ids) - 1, st.session_state.current_id_index + jump_step)
-                            st.session_state.current_id_index = new_index
-                            st.rerun()
-                    
-        
-        except ImportError as e:
-            st.error("缺少必要的库，请安装: pip install Pillow")
-        except Exception as e:
-            st.error(f"处理文件夹时出错: {str(e)}")
+                except Exception as e:
+                    st.error(f"处理过程中出错: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
     
-    else:
-        st.info("请输入文件夹路径开始查看TIFF图像")
+    elif klarf_folder:
+        st.error("❌ 文件夹路径不存在，请检查路径是否正确")
+    
+    # CSV文件合并工具
+    st.markdown("---")
+    st.subheader("📁 2. CSV文件合并工具")
+    
+    with st.expander("ℹ️ 功能说明", expanded=False):
         st.markdown("""
-        ### TIFF图像查看器使用说明：
+        **CSV文件合并功能**：
+        - 读取文件夹中所有包含slot的子文件夹
+        - 查找每个子文件夹内的CSV文件（可指定文件名包含的关键词）并合并
+        - 每个子文件夹的数据导出为Excel中的一个Sheet
+        - Sheet名称格式：slot1, slot2, slot10等
+        - 支持选择要导出的Slot
         
-        1. **文件格式要求**：
-           - 文件命名格式：`ID-通道.tiff` 或 `ID-通道.TIFF`
-           - 支持的通道：DN1O, DW1O, DW2O
-           - 例如：`1-DN1O.tiff`, `1-DW1O.tiff`, `1-DW2O.tiff`
-        
-        2. **功能特点**：
-           - 自动检测文件夹中所有符合格式的TIFF文件
-           - 按ID分组显示，一行显示三个通道
-           - 支持16位TIFF图像的正确显示
-           - 自动增强对比度，优化显示效果
-           - 批量浏览功能，快速切换不同ID
-        
-        3. **16位图像处理**：
-           - 自动进行对比度拉伸（2%-98%分位数）
-           - 显示原始数值范围和统计信息
-           - 可选择开启/关闭自动增强
-        
-        4. **浏览功能**：
-           - ID选择下拉框
-           - 上一个/下一个ID快速切换
-           - 所有ID概览表格
-           - 详细的图像信息显示
+        **文件夹结构示例**：
+        ```
+        根文件夹/
+        ├── data_slot1/
+        │   ├── BlobFeatures_Calib.csv
+        │   ├── file2.csv
+        │   └── file3.csv
+        ├── result_slot10/
+        │   ├── BlobFeatures_Calib.csv
+        │   └── file2.csv
+        ```
         """)
+    
+    csv_merge_folder = st.text_input(
+        "请输入包含slot子文件夹的根文件夹路径",
+        key="csv_merge_folder_path",
+        help="文件夹中应包含多个以slot命名的子文件夹，每个子文件夹内有CSV文件"
+    )
+    
+    # CSV文件名过滤关键词
+    csv_keyword = st.text_input(
+        "CSV文件名包含的关键词（可选，留空则合并所有CSV）",
+        value="BlobFeatures_Calib",
+        key="csv_keyword",
+        help="例如：BlobFeatures_Calib，只合并包含此关键词的CSV文件"
+    )
+    
+    # 开始合并按钮
+    if csv_merge_folder and os.path.exists(csv_merge_folder):
+        if st.button("🚀 开始合并CSV文件", type="primary", key="merge_csv_btn"):
+            with st.spinner("正在扫描和合并CSV文件..."):
+                try:
+                    def extract_slot_number(folder_name):
+                        """从文件夹名称中提取slot编号"""
+                        import re
+                        match = re.search(r'slot[_\s-]*(\d+)', folder_name.lower())
+                        if match:
+                            return match.group(1)
+                        return None
+                    
+                    def merge_csv_files_to_excel(root_folder, file_keyword=""):
+                        """读取文件夹中所有包含slot的子文件夹，合并CSV文件到Excel"""
+                        slot_data = {}
+                        
+                        for item in os.listdir(root_folder):
+                            item_path = os.path.join(root_folder, item)
+                            
+                            if os.path.isdir(item_path) and 'slot' in item.lower():
+                                slot_num = extract_slot_number(item)
+                                
+                                if slot_num is not None:
+                                    csv_files = []
+                                    for file in os.listdir(item_path):
+                                        if file.lower().endswith('.csv'):
+                                            # 如果指定了关键词，则只选择包含关键词的文件
+                                            if not file_keyword or file_keyword in file:
+                                                csv_files.append(os.path.join(item_path, file))
+                                    
+                                    if csv_files:
+                                        dfs = []
+                                        for csv_file in csv_files:
+                                            try:
+                                                df = pd.read_csv(csv_file)
+                                                dfs.append(df)
+                                            except Exception as e:
+                                                st.warning(f"读取文件 {os.path.basename(csv_file)} 失败: {e}")
+                                        
+                                        if dfs:
+                                            merged_df = pd.concat(dfs, ignore_index=True)
+                                            slot_data[slot_num] = merged_df
+                                            st.success(f"✓ Slot {slot_num}: 成功合并 {len(csv_files)} 个CSV文件，共 {len(merged_df)} 条记录")
+                                    else:
+                                        if file_keyword:
+                                            st.warning(f"⚠ {item}: 未找到包含'{file_keyword}'的CSV文件")
+                                        else:
+                                            st.warning(f"⚠ {item}: 未找到CSV文件")
+                        
+                        return slot_data
+                    
+                    # 执行合并
+                    merged_data = merge_csv_files_to_excel(csv_merge_folder, csv_keyword)
+                    
+                    if merged_data:
+                        st.success(f"✅ 成功合并 {len(merged_data)} 个Slot的数据")
+                        
+                        # 保存到session state
+                        st.session_state.csv_merged_data = merged_data
+                        # 重新合并时重置选择状态为全选
+                        st.session_state.csv_selected_slots = [f"slot{num}" for num in sorted(merged_data.keys(), key=lambda x: int(x))]
+                        
+                    else:
+                        st.warning("未找到任何包含slot的文件夹或CSV文件")
+                    
+                except Exception as e:
+                    st.error(f"处理过程中出错: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
+        
+        # 显示已合并的数据（在按钮块外面，即使页面刷新也能显示）
+        if 'csv_merged_data' in st.session_state and st.session_state.csv_merged_data:
+            merged_data = st.session_state.csv_merged_data
+            
+            st.success(f"✅ 已加载 {len(merged_data)} 个Slot的数据")
+            
+            # 显示数据预览
+            st.subheader("📊 数据预览")
+            
+            selected_preview = st.selectbox(
+                "选择要查看的Slot",
+                options=[f"slot{num}" for num in sorted(merged_data.keys(), key=lambda x: int(x))],
+                key="csv_preview_selector_persistent"
+            )
+            
+            if selected_preview:
+                slot_num = selected_preview.replace("slot", "")
+                df_preview = merged_data[slot_num]
+                st.write(f"**{selected_preview}** 数据概况：")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("总记录数", len(df_preview))
+                with col2:
+                    st.metric("字段数", len(df_preview.columns))
+                
+                st.dataframe(df_preview, use_container_width=True, height=400)
+            
+            # 导出为Excel
+            st.subheader("💾 导出数据")
+            
+            # 显示汇总信息
+            st.write("**Excel文件将包含以下Sheet：**")
+            summary_data = []
+            total_records = 0
+            for slot_num in sorted(merged_data.keys(), key=lambda x: int(x)):
+                slot_name = f"slot{slot_num}"
+                df = merged_data[slot_num]
+                record_count = len(df)
+                total_records += record_count
+                summary_data.append({
+                    "Sheet名称": slot_name,
+                    "记录数": record_count,
+                    "字段数": len(df.columns)
+                })
+            
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True)
+            st.info(f"📊 总计：{len(merged_data)} 个Sheet，共 {total_records} 条记录")
+            
+            # 添加分隔线
+            st.markdown("---")
+            
+            # 生成Excel按钮（按需生成）
+            if st.button("🔄 生成Excel文件", type="primary", key="generate_csv_excel_btn", use_container_width=True):
+                try:
+                    # 创建进度条
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    sorted_slots = sorted(merged_data.keys(), key=lambda x: int(x))
+                    total_slots = len(sorted_slots)
+                    
+                    status_text.text(f"正在生成Excel文件... (0/{total_slots})")
+                    
+                    output = io.BytesIO()
+                    # 使用 xlsxwriter 引擎，比 openpyxl 快很多
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        for idx, slot_num in enumerate(sorted_slots):
+                            slot_name = f"slot{slot_num}"
+                            df = merged_data[slot_num]
+                            
+                            # 更新进度
+                            progress = (idx + 1) / total_slots
+                            progress_bar.progress(progress)
+                            status_text.text(f"正在写入 {slot_name}... ({idx + 1}/{total_slots})")
+                            
+                            df.to_excel(writer, sheet_name=slot_name, index=False)
+                    
+                    excel_data = output.getvalue()
+                    
+                    # 清除进度显示
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    # 保存到session state
+                    st.session_state.csv_excel_data = excel_data
+                    st.success(f"✅ Excel文件生成成功！（{total_slots} 个Sheet，共 {total_records} 条记录）")
+                    
+                except Exception as e:
+                    st.error(f"生成Excel文件失败: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
+            
+            # 如果Excel已生成，显示下载按钮
+            if 'csv_excel_data' in st.session_state and st.session_state.csv_excel_data:
+                st.download_button(
+                    label="📥 下载Excel文件（所有Slot合并在不同Sheet中）",
+                    data=st.session_state.csv_excel_data,
+                    file_name=f"CSV_merged_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_csv_merged_excel_persistent",
+                    type="primary",
+                    use_container_width=True,
+                    help=f"包含 {len(merged_data)} 个Sheet，共 {total_records} 条记录"
+                )
+    
+    elif csv_merge_folder:
+        st.error("❌ 文件夹路径不存在，请检查路径是否正确")
+    
+    # # 显示帮助信息
+    # with st.expander("ℹ️ KLARF文件格式说明"):
+    #     st.markdown("""
+    #     ### KLARF文件格式
+        
+    #     **支持的文件格式：**
+    #     - `.klarf`, `.KLARF`
+    #     - `.txt`, `.TXT`
+    #     - `.001`, `.002`, `.003` 等数字后缀
+    #     - 文件名包含 `klarf` 或 `slot` 的文件
+        
+        
+    #     **标准字段（17个）：**
+    #     1. DEFECTID - 缺陷ID
+    #     2. XREL - X相对坐标
+    #     3. YREL - Y相对坐标
+    #     4. XINDEX - X索引
+    #     5. YINDEX - Y索引
+    #     6. XSIZE - X尺寸
+    #     7. YSIZE - Y尺寸
+    #     8. DEFECTAREA - 缺陷面积
+    #     9. DSIZE - 缺陷大小
+    #     10. CLASSNUMBER - 分类编号
+    #     11. TEST - 测试标识
+    #     12. CLUSTERNUMBER - 簇编号
+    #     13. ROUGHBINNUMBER - 粗分箱编号
+    #     14. FINEBINNUMBER - 细分箱编号
+    #     15. REVIEWSAMPLE - 复查样本
+    #     16. IMAGECOUNT - 图像数量
+    #     17. IMAGELIST - 图像列表
+    #     """)
 
-# 第五个标签页 - 多文件夹缺陷对比
-with tab1:
+with tab2:
+    st.markdown('<a name="规则编辑器"></a>', unsafe_allow_html=True)
+    st.header("⚙️ 分类规则编辑器")
+    
+    import json
+    import rule_engine
+    
+    # 规则文件路径
+    default_rules_path = "classification_rules.json"
+    
+    st.subheader("📂 规则文件管理")
+    
+    # 添加加载方式选择
+    load_method = st.radio(
+        "选择加载方式",
+        ["📁 从文件路径加载", "📤 上传JSON文件"],
+        horizontal=True
+    )
+    
+    rules_file_path = None
+    load_button = False
+    uploaded_rules = None
+    
+    if load_method == "📁 从文件路径加载":
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            rules_file_path = st.text_input("规则文件路径", value=default_rules_path, key="rules_path_input")
+        with col2:
+            st.write("")
+            st.write("")
+            load_button = st.button("🔄 加载规则", key="load_from_path")
+        with col3:
+            st.write("")
+            st.write("")
+            # 文件浏览器按钮提示
+            if st.button("💡 提示", key="path_help"):
+                st.info("💡 在文本框中输入完整的文件路径，例如：\n\n`D:/streamlit/classification_rules.json`\n\n或使用相对路径：\n\n`classification_rules.json`")
+    
+    else:  # 上传JSON文件
+        uploaded_file = st.file_uploader(
+            "选择JSON规则文件",
+            type=['json'],
+            help="上传classification_rules.json文件",
+            key="json_uploader"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                # 读取上传的文件内容
+                uploaded_rules = json.load(uploaded_file)
+                st.success(f"✅ 文件 '{uploaded_file.name}' 上传成功")
+                
+                # 显示预览
+                with st.expander("📄 文件预览"):
+                    st.json(uploaded_rules)
+                
+                # 加载按钮
+                if st.button("✔️ 确认加载此文件", type="primary", key="load_uploaded"):
+                    load_button = True
+            except json.JSONDecodeError as e:
+                st.error(f"❌ JSON文件格式错误: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ 读取文件失败: {str(e)}")
+    
+    # 初始化session state
+    if 'rules_config' not in st.session_state:
+        # 首次加载，尝试加载默认文件
+        try:
+            rules_config = rule_engine.load_rules_from_json(default_rules_path)
+            if rules_config:
+                st.session_state.rules_config = rules_config
+                st.session_state.current_rules_source = default_rules_path
+                st.info(f"ℹ️ 已自动加载默认规则文件：{default_rules_path}")
+            else:
+                st.warning("⚠️ 未找到默认规则文件，请加载或上传规则文件")
+                st.stop()
+        except:
+            st.warning("⚠️ 未找到默认规则文件，请加载或上传规则文件")
+            st.stop()
+    
+    # 处理加载操作
+    if load_button:
+        if load_method == "📁 从文件路径加载" and rules_file_path:
+            rules_config = rule_engine.load_rules_from_json(rules_file_path)
+            if rules_config:
+                st.session_state.rules_config = rules_config
+                st.session_state.current_rules_source = rules_file_path
+                st.success(f"✅ 成功加载规则文件：{rules_file_path}")
+                st.rerun()
+            else:
+                st.error(f"❌ 加载规则文件失败：{rules_file_path}")
+                st.error("请检查文件路径是否正确，文件是否存在")
+                st.stop()
+        elif load_method == "📤 上传JSON文件" and uploaded_rules:
+            st.session_state.rules_config = uploaded_rules
+            st.session_state.current_rules_source = uploaded_file.name
+            st.success(f"✅ 成功加载上传的规则文件：{uploaded_file.name}")
+            st.rerun()
+    
+    rules_config = st.session_state.rules_config
+    
+    # 显示当前加载的规则来源
+    current_source = st.session_state.get('current_rules_source', '未知')
+    st.caption(f"📌 当前规则来源: `{current_source}`")
+    
+    # 显示规则文件信息
+    st.subheader("📋 规则配置信息")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("规则版本", rules_config.get('version', 'N/A'))
+    with col2:
+        st.metric("规则数量", len(rules_config.get('rules', [])))
+    with col3:
+        enabled_count = sum(1 for r in rules_config.get('rules', []) if r.get('enabled', True))
+        st.metric("已启用规则", enabled_count)
+    
+    st.info(f"📝 描述: {rules_config.get('description', '无描述')}")
+    
+    # 阈值参数设置
+    st.subheader("🎛️ 全局阈值参数")
+    thresholds = rules_config.get('thresholds', {})
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        snr_adj = st.number_input("SNR调整值", 
+                                   value=float(thresholds.get('snr_adjustment', 0)),
+                                   step=0.5,
+                                   format="%.1f")
+        thresholds['snr_adjustment'] = snr_adj
+    with col2:
+        dw1o_adj = st.number_input("DW1O峰值调整", 
+                                     value=float(thresholds.get('dw1o_peak_adjustment', 0)),
+                                     step=100.0,
+                                     format="%.0f")
+        thresholds['dw1o_peak_adjustment'] = dw1o_adj
+    with col3:
+        dw2o_adj = st.number_input("DW2O峰值调整", 
+                                     value=float(thresholds.get('dw2o_peak_adjustment', 0)),
+                                     step=100.0,
+                                     format="%.0f")
+        thresholds['dw2o_peak_adjustment'] = dw2o_adj
+    
+    rules_config['thresholds'] = thresholds
+    
+    # 默认返回值设置
+    st.subheader("🔢 默认返回值")
+    default_return = st.number_input("当没有规则匹配时的返回值", 
+                                     value=int(rules_config.get('default_return', 10002)),
+                                     step=1)
+    rules_config['default_return'] = default_return
+    
+    st.markdown("---")
+    
+    # 规则列表编辑
+    st.subheader("📜 分类规则列表")
+    
+    # 添加新规则按钮
+    if st.button("➕ 添加新规则"):
+        new_rule = {
+            "rule_id": max([r.get('rule_id', 0) for r in rules_config['rules']], default=0) + 1,
+            "name": "新规则",
+            "conditions": [],
+            "logic": "AND",
+            "return_value": 0,
+            "enabled": True
+        }
+        rules_config['rules'].append(new_rule)
+        st.success("✅ 已添加新规则")
+        st.rerun()
+    
+    # 可用特征列表
+    available_features = rules_config.get('available_features', [])
+    operators = ['>', '>=', '<', '<=', '==', '!=']
+    
+    # 通道组合映射（内部值 -> 显示名称）
+    channel_combinations_map = {
+        '': '无限制',
+        'D_only': 'DW1O通道单独',
+        'J_only': 'DW2O通道单独',
+        'P_only': 'DN1O通道单独',
+        'D_and_J': 'DW1O+DW2O组合',
+        'D_and_P': 'DW1O+DN1O组合',
+        'J_and_P': 'DW2O+DN1O组合',
+        'D_and_J_and_P': 'DW1O+DW2O+DN1O全通道'
+    }
+    channel_combinations = list(channel_combinations_map.keys())
+    
+    # 按通道组合分组规则
+    from collections import defaultdict
+    rules_by_channel = defaultdict(list)
+    for idx, rule in enumerate(rules_config['rules']):
+        channel_key = rule.get('channel_combination', '')
+        rules_by_channel[channel_key].append((idx, rule))
+    
+    # 初始化session state存储选中的规则
+    if 'selected_rule_idx' not in st.session_state:
+        st.session_state.selected_rule_idx = 0 if rules_config['rules'] else None
+    
+    # 创建左右分栏布局
+    left_col, right_col = st.columns([1, 3])
+    
+    # 左侧：树形结构显示
+    with left_col:
+        st.markdown("### 📋 规则树")
+        st.markdown("---")
+        
+        # 遍历每个通道组合组（父类）
+        for channel_key in sorted(rules_by_channel.keys(), key=lambda x: (x == '', x)):
+            channel_display_name = channel_combinations_map.get(channel_key, channel_key or '无限制')
+            rules_in_group = rules_by_channel[channel_key]
+            
+            # 统计该组的信息
+            group_enabled_count = sum(1 for _, r in rules_in_group if r.get('enabled', True))
+            
+            # 使用expander作为可折叠的父类（默认折叠）
+            with st.expander(f"📂 {channel_display_name} ({len(rules_in_group)} 条规则，{group_enabled_count} 条已启用)", expanded=False):
+                # 显示该组下的所有规则（子类）
+                for idx, rule in rules_in_group:
+                    rule_status = '✅' if rule.get('enabled', True) else '❌'
+                    rule_name = rule.get('name', '未命名')
+                    rule_id = rule.get('rule_id', idx+1)
+                    
+                    # 创建两列布局：规则按钮 + 删除按钮
+                    btn_col, del_col = st.columns([4, 1])
+                    
+                    with btn_col:
+                        # 创建可点击的规则按钮
+                        if st.button(
+                            f"{rule_status} 规则{rule_id}: {rule_name}",
+                            key=f"select_rule_{idx}",
+                            use_container_width=True,
+                            type="primary" if st.session_state.selected_rule_idx == idx else "secondary"
+                        ):
+                            st.session_state.selected_rule_idx = idx
+                            st.rerun()
+                    
+                    with del_col:
+                        # 添加删除按钮
+                        if st.button("🗑️", key=f"del_rule_{idx}", help="删除此规则", use_container_width=True):
+                            # 直接删除规则
+                            rules_config['rules'].pop(idx)
+                            # 显式更新 session_state 以确保更改持久化
+                            st.session_state.rules_config = rules_config
+                            # 更新选中索引
+                            if st.session_state.selected_rule_idx is not None:
+                                if st.session_state.selected_rule_idx >= len(rules_config['rules']):
+                                    st.session_state.selected_rule_idx = len(rules_config['rules']) - 1 if rules_config['rules'] else None
+                                elif st.session_state.selected_rule_idx == idx:
+                                    st.session_state.selected_rule_idx = None
+                            # 重新运行
+                            st.rerun()
+    
+    # 右侧：选中规则的详细编辑界面
+    rules_to_delete = []
+    with right_col:
+        if st.session_state.selected_rule_idx is not None and st.session_state.selected_rule_idx < len(rules_config['rules']):
+            idx = st.session_state.selected_rule_idx
+            rule = rules_config['rules'][idx]
+            
+            st.markdown(f"### 🔖 编辑规则 {rule.get('rule_id', idx+1)}")
+            st.markdown("---")
+            
+            # 规则基本信息
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                rule['name'] = st.text_input("规则名称", value=rule.get('name', ''), key=f"name_{idx}")
+            
+            with col2:
+                rule['enabled'] = st.checkbox("启用", value=rule.get('enabled', True), key=f"enabled_{idx}")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                rule['rule_id'] = st.number_input("规则ID", value=int(rule.get('rule_id', idx+1)), 
+                                                  step=1, key=f"id_{idx}")
+            with col2:
+                rule['return_value'] = st.number_input("返回值", value=int(rule.get('return_value', 0)), 
+                                                       step=1, key=f"return_{idx}")
+            with col3:
+                # 选择逻辑模式
+                use_complex_logic = st.checkbox("使用复杂逻辑表达式", 
+                                               value='logic_expression' in rule,
+                                               key=f"complex_{idx}",
+                                               help="启用后可以使用 &&、||、! 和括号组合条件")
+            
+            # 通道组合（可选）
+            current_combination = rule.get('channel_combination', '')
+            combination_index = channel_combinations.index(current_combination) if current_combination in channel_combinations else 0
+            
+            # 使用中文显示名称
+            selected_display = st.selectbox(
+                "通道组合限制（可选）", 
+                options=channel_combinations,
+                format_func=lambda x: channel_combinations_map.get(x, x),
+                index=combination_index,
+                key=f"channel_{idx}",
+                help="限制规则仅在特定通道组合下生效"
+            )
+            
+            if selected_display:
+                rule['channel_combination'] = selected_display
+            elif 'channel_combination' in rule:
+                del rule['channel_combination']
+            
+            # 逻辑设置
+            if use_complex_logic:
+                # 使用复杂逻辑表达式
+                st.info("💡 复杂逻辑表达式说明：使用条件ID组合，支持 && (AND)、|| (OR)、! (NOT) 和括号")
+                st.markdown("""
+                **示例**：
+                - `1 && 2` : 条件1 AND 条件2
+                - `1 || 2 || 3` : 条件1 OR 条件2 OR 条件3
+                - `1 && (2 || 3)` : 条件1 AND (条件2 OR 条件3)
+                - `(1 || 2) && !3` : (条件1 OR 条件2) AND NOT 条件3
+                - `1 && (2 || 3 || 4) && (!5)` : 条件1 AND (条件2 OR 条件3 OR 条件4) AND (NOT 条件5)
+                """)
+                
+                current_expression = rule.get('logic_expression', '')
+                rule['logic_expression'] = st.text_input(
+                    "逻辑表达式", 
+                    value=current_expression,
+                    key=f"logic_expr_{idx}",
+                    placeholder="例如: 1 && (2 || 3) && (!4)"
+                )
+                
+                # 删除简单逻辑字段
+                if 'logic' in rule:
+                    del rule['logic']
+            else:
+                # 使用简单逻辑
+                rule['logic'] = st.selectbox("逻辑关系", ['AND', 'OR'], 
+                                            index=0 if rule.get('logic', 'AND') == 'AND' else 1,
+                                            key=f"logic_{idx}",
+                                            help="AND: 所有条件都满足, OR: 任一条件满足")
+                
+                # 删除复杂逻辑字段
+                if 'logic_expression' in rule:
+                    del rule['logic_expression']
+            
+            # 条件列表
+            st.write("**条件列表:**")
+            
+            conditions = rule.get('conditions', [])
+            conditions_to_delete = []
+            use_complex = 'logic_expression' in rule
+            
+            for cond_idx, condition in enumerate(conditions):
+                # 如果使用复杂逻辑，显示条件ID
+                if use_complex:
+                    col0, col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1, 2, 1, 1])
+                    with col0:
+                        # 确保有condition_id
+                        if 'condition_id' not in condition:
+                            condition['condition_id'] = cond_idx + 1
+                        condition['condition_id'] = st.number_input("ID", 
+                                                                    value=int(condition.get('condition_id', cond_idx+1)),
+                                                                    min_value=1,
+                                                                    step=1,
+                                                                    key=f"cond_id_{idx}_{cond_idx}")
+                else:
+                    col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 1, 1])
+                    # 移除condition_id（简单逻辑不需要）
+                    if 'condition_id' in condition:
+                        del condition['condition_id']
+                
+                with col1:
+                    feature_index = available_features.index(condition['feature']) if condition['feature'] in available_features else 0
+                    condition['feature'] = st.selectbox("特征", available_features, 
+                                                       index=feature_index,
+                                                       key=f"feat_{idx}_{cond_idx}")
+                
+                with col2:
+                    op_index = operators.index(condition['operator']) if condition['operator'] in operators else 0
+                    condition['operator'] = st.selectbox("操作符", operators, 
+                                                        index=op_index,
+                                                        key=f"op_{idx}_{cond_idx}")
+                
+                with col3:
+                    condition['value'] = st.number_input("值", value=float(condition['value']), 
+                                                        step=0.1,
+                                                        key=f"val_{idx}_{cond_idx}")
+                
+                with col4:
+                    condition['use_threshold'] = st.checkbox("使用阈值", 
+                                                            value=condition.get('use_threshold', False),
+                                                            key=f"thresh_{idx}_{cond_idx}")
+                
+                with col5:
+                    if st.button("🗑️", key=f"del_cond_{idx}_{cond_idx}"):
+                        # 直接删除条件
+                        conditions.pop(cond_idx)
+                        rule['conditions'] = conditions
+                        # 显式更新 session_state 以确保更改持久化
+                        st.session_state.rules_config = rules_config
+                        st.rerun()
+            
+            rule['conditions'] = conditions
+            
+            # 添加新条件按钮
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("➕ 添加条件", key=f"add_cond_{idx}"):
+                    new_condition = {
+                        "feature": available_features[0] if available_features else "",
+                        "operator": ">",
+                        "value": 0,
+                        "use_threshold": False
+                    }
+                    # 如果使用复杂逻辑，添加condition_id
+                    if 'logic_expression' in rule:
+                        # 找到最大的condition_id
+                        max_id = max([c.get('condition_id', 0) for c in conditions], default=0)
+                        new_condition['condition_id'] = max_id + 1
+                    conditions.append(new_condition)
+                    st.rerun()
+        else:
+            st.info("👈 请从左侧选择一个规则进行编辑")
+    
+    # 删除标记的规则
+    for rule_idx in sorted(rules_to_delete, reverse=True):
+            with st.expander(f"� **{channel_display_name}** ({len(rules_in_group)} 条规则，{group_enabled_count} 条已启用)", expanded=True):
+                for idx, rule in rules_in_group:
+                    # 使用容器展示每条规则
+                    st.markdown(f"### �🔖 规则 {rule.get('rule_id', idx+1)}: {rule.get('name', '未命名')} {'✅' if rule.get('enabled', True) else '❌'}")
+                    
+                    col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                rule['name'] = st.text_input("规则名称", value=rule.get('name', ''), key=f"name_{idx}")
+            
+            with col2:
+                rule['enabled'] = st.checkbox("启用", value=rule.get('enabled', True), key=f"enabled_{idx}")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                rule['rule_id'] = st.number_input("规则ID", value=int(rule.get('rule_id', idx+1)), 
+                                                  step=1, key=f"id_{idx}")
+            with col2:
+                rule['return_value'] = st.number_input("返回值", value=int(rule.get('return_value', 0)), 
+                                                       step=1, key=f"return_{idx}")
+            with col3:
+                # 选择逻辑模式
+                use_complex_logic = st.checkbox("使用复杂逻辑表达式", 
+                                               value='logic_expression' in rule,
+                                               key=f"complex_{idx}",
+                                               help="启用后可以使用 &&、||、! 和括号组合条件")
+            
+            # 通道组合（可选）
+            current_combination = rule.get('channel_combination', '')
+            combination_index = channel_combinations.index(current_combination) if current_combination in channel_combinations else 0
+            
+            # 使用中文显示名称
+            selected_display = st.selectbox(
+                "通道组合限制（可选）", 
+                options=channel_combinations,
+                format_func=lambda x: channel_combinations_map.get(x, x),
+                index=combination_index,
+                key=f"channel_{idx}",
+                help="限制规则仅在特定通道组合下生效"
+            )
+            
+            if selected_display:
+                rule['channel_combination'] = selected_display
+            elif 'channel_combination' in rule:
+                del rule['channel_combination']
+            
+            # 逻辑设置
+            if use_complex_logic:
+                # 使用复杂逻辑表达式
+                st.info("💡 复杂逻辑表达式说明：使用条件ID组合，支持 && (AND)、|| (OR)、! (NOT) 和括号")
+                st.markdown("""
+                **示例**：
+                - `1 && 2` : 条件1 AND 条件2
+                - `1 || 2 || 3` : 条件1 OR 条件2 OR 条件3
+                - `1 && (2 || 3)` : 条件1 AND (条件2 OR 条件3)
+                - `(1 || 2) && !3` : (条件1 OR 条件2) AND NOT 条件3
+                - `1 && (2 || 3 || 4) && (!5)` : 条件1 AND (条件2 OR 条件3 OR 条件4) AND (NOT 条件5)
+                """)
+                
+                current_expression = rule.get('logic_expression', '')
+                rule['logic_expression'] = st.text_input(
+                    "逻辑表达式", 
+                    value=current_expression,
+                    key=f"logic_expr_{idx}",
+                    placeholder="例如: 1 && (2 || 3) && (!4)"
+                )
+                
+                # 删除简单逻辑字段
+                if 'logic' in rule:
+                    del rule['logic']
+            else:
+                # 使用简单逻辑
+                rule['logic'] = st.selectbox("逻辑关系", ['AND', 'OR'], 
+                                            index=0 if rule.get('logic', 'AND') == 'AND' else 1,
+                                            key=f"logic_{idx}",
+                                            help="AND: 所有条件都满足, OR: 任一条件满足")
+                
+                # 删除复杂逻辑字段
+                if 'logic_expression' in rule:
+                    del rule['logic_expression']
+            
+            # 条件列表
+            st.write("**条件列表:**")
+            
+            conditions = rule.get('conditions', [])
+            use_complex = 'logic_expression' in rule
+            
+            for cond_idx, condition in enumerate(conditions):
+                # 如果使用复杂逻辑，显示条件ID
+                if use_complex:
+                    col0, col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1, 2, 1, 1])
+                    with col0:
+                        # 确保有condition_id
+                        if 'condition_id' not in condition:
+                            condition['condition_id'] = cond_idx + 1
+                        condition['condition_id'] = st.number_input("ID", 
+                                                                    value=int(condition.get('condition_id', cond_idx+1)),
+                                                                    min_value=1,
+                                                                    step=1,
+                                                                    key=f"cond_id_{idx}_{cond_idx}")
+                else:
+                    col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 1, 1])
+                    # 移除condition_id（简单逻辑不需要）
+                    if 'condition_id' in condition:
+                        del condition['condition_id']
+                
+                with col1:
+                    feature_index = available_features.index(condition['feature']) if condition['feature'] in available_features else 0
+                    condition['feature'] = st.selectbox("特征", available_features, 
+                                                       index=feature_index,
+                                                       key=f"feat_{idx}_{cond_idx}")
+                
+                with col2:
+                    op_index = operators.index(condition['operator']) if condition['operator'] in operators else 0
+                    condition['operator'] = st.selectbox("操作符", operators, 
+                                                        index=op_index,
+                                                        key=f"op_{idx}_{cond_idx}")
+                
+                with col3:
+                    condition['value'] = st.number_input("值", value=float(condition['value']), 
+                                                        step=0.1,
+                                                        key=f"val_{idx}_{cond_idx}")
+                
+                with col4:
+                    condition['use_threshold'] = st.checkbox("使用阈值", 
+                                                            value=condition.get('use_threshold', False),
+                                                            key=f"thresh_{idx}_{cond_idx}")
+                
+                with col5:
+                    if st.button("🗑️", key=f"del_cond_{idx}_{cond_idx}"):
+                        # 直接删除条件
+                        conditions.pop(cond_idx)
+                        rule['conditions'] = conditions
+                        # 显式更新 session_state 以确保更改持久化
+                        st.session_state.rules_config = rules_config
+                        st.rerun()
+            
+            rule['conditions'] = conditions
+            
+            # 添加新条件按钮
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("➕ 添加条件", key=f"add_cond_{idx}"):
+                    new_condition = {
+                        "feature": available_features[0] if available_features else "",
+                        "operator": ">",
+                        "value": 0,
+                        "use_threshold": False
+                    }
+                    # 如果使用复杂逻辑，添加condition_id
+                    if 'logic_expression' in rule:
+                        # 找到最大的condition_id
+                        max_id = max([c.get('condition_id', 0) for c in conditions], default=0)
+                        new_condition['condition_id'] = max_id + 1
+                    conditions.append(new_condition)
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ 删除此规则", key=f"del_rule_{idx}"):
+                    # 直接删除规则
+                    rules_config['rules'].pop(idx)
+                    # 显式更新 session_state 以确保更改持久化
+                    st.session_state.rules_config = rules_config
+                    # 更新选中索引
+                    if idx >= len(rules_config['rules']):
+                        st.session_state.selected_rule_idx = len(rules_config['rules']) - 1 if rules_config['rules'] else None
+                    else:
+                        st.session_state.selected_rule_idx = None
+                    # 重新运行
+                    st.rerun()
+    
+    # 删除标记的规则（保留此处以防万一，但上面已经直接删除了）
+    for rule_idx in sorted(rules_to_delete, reverse=True):
+        if rule_idx < len(rules_config['rules']):
+            rules_config['rules'].pop(rule_idx)
+    
+    st.markdown("---")
+    
+    # 保存按钮
+    st.subheader("💾 保存规则")
+    
+    # 保存方式选择
+    save_method = st.radio(
+        "选择保存方式",
+        ["💾 保存到文件路径", "⬇️ 下载JSON文件"],
+        horizontal=True,
+        key="save_method"
+    )
+    
+    if save_method == "💾 保存到文件路径":
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # 获取默认保存路径
+            default_save_path = st.session_state.get('current_rules_source', default_rules_path)
+            if not default_save_path.endswith('.json'):
+                default_save_path = default_rules_path
+            
+            save_path = st.text_input(
+                "保存文件路径", 
+                value=default_save_path, 
+                key="save_path",
+                help="输入完整的文件路径，例如：D:/streamlit/my_rules.json"
+            )
+        
+        with col2:
+            st.write("")
+            st.write("")
+            if st.button("💾 保存", type="primary", key="save_to_file"):
+                st.session_state.rules_config = rules_config
+                if rule_engine.save_rules_to_json(rules_config, save_path):
+                    st.success(f"✅ 规则已成功保存到:\n`{save_path}`")
+                    st.session_state.current_rules_source = save_path
+                    st.balloons()
+                else:
+                    st.error("❌ 保存失败，请检查文件路径是否正确")
+        
+        st.info("💡 **提示**: 保存后，您可以在`离线过漏检.py`中使用此规则文件")
+    
+    else:  # 下载JSON文件
+        st.write("点击下方按钮下载规则文件到本地：")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            download_filename = st.text_input(
+                "文件名", 
+                value="classification_rules_export.json",
+                key="download_filename",
+                help="设置下载的文件名"
+            )
+        
+        with col2:
+            st.write("")
+            st.write("")
+            # 生成JSON字符串
+            json_str = json.dumps(rules_config, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="⬇️ 下载JSON",
+                data=json_str,
+                file_name=download_filename,
+                mime="application/json",
+                type="primary",
+                key="download_json"
+            )
+        
+        st.info("💡 **提示**: 下载后，您可以将文件放置到工作目录，然后在规则编辑器中重新加载")
+    
+    st.markdown("---")
+    
+    # 规则预览
+    st.subheader("👁️ 规则JSON预览")
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        show_full_json = st.checkbox("显示完整JSON", value=False, key="show_full_json")
+    with col2:
+        if st.button("📋 复制JSON到剪贴板", key="copy_json_btn"):
+            st.code(json.dumps(rules_config, ensure_ascii=False, indent=2), language="json")
+            st.info("💡 请选中上方代码框的内容，然后按 Ctrl+C 复制")
+    
+    if show_full_json:
+        st.json(rules_config)
+    else:
+        with st.expander("点击展开查看完整JSON"):
+            st.json(rules_config)
+
+
+
+# 第1个标签页 - 多文件夹缺陷对比
+with tab3:
     st.markdown('<a name="多工况对比"></a>', unsafe_allow_html=True)
-    st.header("📁 过漏检分析")
+    st.header("📁 map图显示")
     
-    st.markdown("""
-    ### 功能说明
-    选择一个包含多个子文件夹的主文件夹，程序会读取每个子文件夹中的缺陷数据文件。
-    
-    **文件要求：**
-    - 主文件夹包含多个子文件夹（如：P1, P2, P3...）
-    - 普通子文件夹：读取 `BlobFeatures.csv` 文件（第4、5列为X、Y坐标）
-    - 包含"kla"的子文件夹：读取 `jianchu.csv` 文件（XREL、YREL列为坐标）
-    - 可选择是否过滤nDefectType为1000和10001的数据（仅对BlobFeatures.csv有效）
-    
-    **显示方式：**
-    - 以坐标(150000, 150000)为中心绘制晶圆图
-    - 不同子文件夹的数据用不同颜色显示
-    - 支持交互式查看和统计分析
-    """)
+    with st.expander("ℹ️ 功能说明", expanded=False):
+        st.markdown("""
+        选择一个包含多个子文件夹的主文件夹，绘制每个文件内的颗粒map图，及统计三个通道的BGMean及BGDev
+        
+        **文件夹结构要求：**
+        ```
+        主文件夹/
+        ├── 20251111200019.509_slot1/
+        │   └── BlobFeatures.csv          (CASI数据)
+        ├── 20251111200502.133_slot2/
+        │   └── BlobFeatures.csv          (CASI数据)
+        ├── kla1/
+        │   └── *.csv 或 *.xlsx           (KLA数据，任意文件名)
+        └── kla2/
+            └── *.csv 或 *.xlsx           (KLA数据，任意文件名)
+        ```
+        
+        **文件读取规则：**
+        - **CASI子文件夹**（不含"kla"）：读取 `BlobFeatures.csv` 文件
+          - 坐标列：优先使用 `dCenterXCartisian_Calib`、`dCenterYCartisian_Calib`
+          - 若无则使用 `dCenterXCartisian`、`dCenterYCartisian`
+        - **KLA子文件夹**（含"kla"）：读取文件夹内任意CSV或Excel文件
+          - 坐标列：使用 `XREL`、`YREL`
+        - **数据过滤**：可选择是否过滤 nDefectType=1000/10001（仅对CASI数据有效）
+        
+        **显示方式：**
+        - 以坐标(150000, 150000)为中心绘制晶圆图
+        - 不同子文件夹的数据用不同颜色显示
+        - 支持交互式查看和统计分析
+        """)
     
     # 文件夹选择
     st.subheader("选择主文件夹")
@@ -560,73 +1633,106 @@ with tab1:
                         # 读取CSV
                         df = pd.read_csv(uploaded_file)
                         
-                        # 根据用户选择过滤nDefectType为1000和10001的数据
+                        # 保存原始数据用于统计计算（包含所有nDefectType）
+                        df_original = df.copy()
+                        
+                        # 根据用户选择过滤nDefectType为1000和10001的数据（仅用于绘图）
                         if filter_special_types_upload and 'nDefectType' in df.columns:
                             df = df[(df['nDefectType'] != 1000) & (df['nDefectType'] != 10001)]
                         
-                        # 获取第4列和第5列（索引3和4）
-                        if df.shape[1] >= 5:
-                            x_col = df.columns[3]
-                            y_col = df.columns[4]
+                        # 优先使用dCenterXCartisian_Calib和dCenterYCartisian_Calib列
+                        if 'dCenterXCartisian_Calib' in df.columns and 'dCenterYCartisian_Calib' in df.columns:
+                            x_col = 'dCenterXCartisian_Calib'
+                            y_col = 'dCenterYCartisian_Calib'
+                        elif 'dCenterXCartisian' in df.columns and 'dCenterYCartisian' in df.columns:
+                            x_col = 'dCenterXCartisian'
+                            y_col = 'dCenterYCartisian'
+                        else:
+                            st.warning(f"文件 {uploaded_file.name} 缺少坐标列")
+                            continue
+                        
+                        x_data = pd.to_numeric(df[x_col], errors='coerce')
+                        y_data = pd.to_numeric(df[y_col], errors='coerce')
+                        
+                        # 过滤有效数据
+                        valid_mask = pd.notna(x_data) & pd.notna(y_data)
+                        x_valid = x_data[valid_mask]
+                        y_valid = y_data[valid_mask]
+                        
+                        if len(x_valid) > 0:
+                            # 计算三个通道的BGMean和BGDev均值（使用原始数据，包含1000和10001，排除0值）
+                            bgmean_bgdev_stats = {}
                             
-                            x_data = pd.to_numeric(df[x_col], errors='coerce')
-                            y_data = pd.to_numeric(df[y_col], errors='coerce')
+                            # DW1O通道
+                            if 'DW1O_BGMean' in df_original.columns:
+                                dw1o_bgmean_all = pd.to_numeric(df_original['DW1O_BGMean'], errors='coerce').dropna()
+                                dw1o_bgmean_all = dw1o_bgmean_all[dw1o_bgmean_all != 0]
+                                if len(dw1o_bgmean_all) > 0:
+                                    bgmean_bgdev_stats['DW1O_BGMean'] = dw1o_bgmean_all.mean()
                             
-                            # 获取DW1O_BGMean列（如果存在）
-                            dw1o_bgmean = None
-                            if 'DW1O_BGMean' in df.columns:
-                                dw1o_bgmean = pd.to_numeric(df['DW1O_BGMean'], errors='coerce')
+                            if 'DW1O_BGDev' in df_original.columns:
+                                dw1o_bgdev_all = pd.to_numeric(df_original['DW1O_BGDev'], errors='coerce').dropna()
+                                dw1o_bgdev_all = dw1o_bgdev_all[dw1o_bgdev_all != 0]
+                                if len(dw1o_bgdev_all) > 0:
+                                    bgmean_bgdev_stats['DW1O_BGDev'] = dw1o_bgdev_all.mean()
                             
-                            # 过滤有效数据
-                            valid_mask = pd.notna(x_data) & pd.notna(y_data)
-                            x_valid = x_data[valid_mask]
-                            y_valid = y_data[valid_mask]
+                            # DW2O通道
+                            if 'DW2O_BGMean' in df_original.columns:
+                                dw2o_bgmean_all = pd.to_numeric(df_original['DW2O_BGMean'], errors='coerce').dropna()
+                                dw2o_bgmean_all = dw2o_bgmean_all[dw2o_bgmean_all != 0]
+                                if len(dw2o_bgmean_all) > 0:
+                                    bgmean_bgdev_stats['DW2O_BGMean'] = dw2o_bgmean_all.mean()
                             
-                            if len(x_valid) > 0:
-                                # 计算DW1O_BGMean统计值（排除0值）
-                                bgmean_stats = {}
-                                if dw1o_bgmean is not None:
-                                    dw1o_valid = dw1o_bgmean[valid_mask].dropna()
-                                    # 排除值为0的数据
-                                    dw1o_valid = dw1o_valid[dw1o_valid != 0]
-                                    if len(dw1o_valid) > 0:
-                                        bgmean_stats = {
-                                            'min': dw1o_valid.min(),
-                                            'max': dw1o_valid.max(),
-                                            'mean': dw1o_valid.mean()
-                                        }
-                                
-                                # 存储数据用于统计
-                                all_data.append({
-                                    'folder': folder_name,
-                                    'count': len(x_valid),
-                                    'x_data': x_valid,
-                                    'y_data': y_valid,
-                                    'bgmean_stats': bgmean_stats
-                                })
-                                
-                                # 创建悬浮文本
-                                hover_text = [
-                                    f"<b>{folder_name}</b><br>X: {x:.2f}<br>Y: {y:.2f}"
-                                    for x, y in zip(x_valid, y_valid)
-                                ]
-                                
-                                # 添加散点图
-                                color = colors[idx % len(colors)]
-                                fig.add_trace(go.Scatter(
-                                    x=x_valid,
-                                    y=y_valid,
-                                    mode='markers',
-                                    name=f'{folder_name} ({len(x_valid)})',
-                                    marker=dict(
-                                        size=point_size,
-                                        color=color,
-                                        line=dict(width=0.5, color='white'),
-                                        opacity=0.7
-                                    ),
-                                    hovertext=hover_text,
-                                    hoverinfo='text'
-                                ))
+                            if 'DW2O_BGDev' in df_original.columns:
+                                dw2o_bgdev_all = pd.to_numeric(df_original['DW2O_BGDev'], errors='coerce').dropna()
+                                dw2o_bgdev_all = dw2o_bgdev_all[dw2o_bgdev_all != 0]
+                                if len(dw2o_bgdev_all) > 0:
+                                    bgmean_bgdev_stats['DW2O_BGDev'] = dw2o_bgdev_all.mean()
+                            
+                            # DN1O通道
+                            if 'DN1O_BGMean' in df_original.columns:
+                                dn1o_bgmean_all = pd.to_numeric(df_original['DN1O_BGMean'], errors='coerce').dropna()
+                                dn1o_bgmean_all = dn1o_bgmean_all[dn1o_bgmean_all != 0]
+                                if len(dn1o_bgmean_all) > 0:
+                                    bgmean_bgdev_stats['DN1O_BGMean'] = dn1o_bgmean_all.mean()
+                            
+                            if 'DN1O_BGDev' in df_original.columns:
+                                dn1o_bgdev_all = pd.to_numeric(df_original['DN1O_BGDev'], errors='coerce').dropna()
+                                dn1o_bgdev_all = dn1o_bgdev_all[dn1o_bgdev_all != 0]
+                                if len(dn1o_bgdev_all) > 0:
+                                    bgmean_bgdev_stats['DN1O_BGDev'] = dn1o_bgdev_all.mean()
+                            
+                            # 存储数据用于统计
+                            all_data.append({
+                                'folder': folder_name,
+                                'count': len(x_valid),
+                                'x_data': x_valid,
+                                'y_data': y_valid,
+                                'bgmean_bgdev_stats': bgmean_bgdev_stats
+                            })
+                            
+                            # 创建悬浮文本
+                            hover_text = [
+                                f"<b>{folder_name}</b><br>X: {x:.2f}<br>Y: {y:.2f}"
+                                for x, y in zip(x_valid, y_valid)
+                            ]
+                            
+                            # 添加散点图
+                            color = colors[idx % len(colors)]
+                            fig.add_trace(go.Scatter(
+                                x=x_valid,
+                                y=y_valid,
+                                mode='markers',
+                                name=f'{folder_name} ({len(x_valid)})',
+                                marker=dict(
+                                    size=point_size,
+                                    color=color,
+                                    line=dict(width=0.5, color='white'),
+                                    opacity=0.7
+                                ),
+                                hovertext=hover_text,
+                                hoverinfo='text'
+                            ))
                     
                     # 添加晶圆边界圆
                     theta = np.linspace(0, 2*np.pi, 100)
@@ -699,15 +1805,14 @@ with tab1:
                                 '占比': f"{(data['count'] / total_defects * 100):.2f}%"
                             }
                             
-                            # 添加DW1O_BGMean统计
-                            if data['bgmean_stats']:
-                                row['BGMean最小值'] = f"{data['bgmean_stats']['min']:.2f}"
-                                row['BGMean最大值'] = f"{data['bgmean_stats']['max']:.2f}"
-                                row['BGMean均值'] = f"{data['bgmean_stats']['mean']:.2f}"
-                            else:
-                                row['BGMean最小值'] = 'N/A'
-                                row['BGMean最大值'] = 'N/A'
-                                row['BGMean均值'] = 'N/A'
+                            # 添加三个通道的BGMean和BGDev均值
+                            stats = data.get('bgmean_bgdev_stats', {})
+                            row['DW1O_BGMean均值'] = f"{stats.get('DW1O_BGMean', 0):.2f}" if 'DW1O_BGMean' in stats else 'N/A'
+                            row['DW1O_BGDev均值'] = f"{stats.get('DW1O_BGDev', 0):.2f}" if 'DW1O_BGDev' in stats else 'N/A'
+                            row['DW2O_BGMean均值'] = f"{stats.get('DW2O_BGMean', 0):.2f}" if 'DW2O_BGMean' in stats else 'N/A'
+                            row['DW2O_BGDev均值'] = f"{stats.get('DW2O_BGDev', 0):.2f}" if 'DW2O_BGDev' in stats else 'N/A'
+                            row['DN1O_BGMean均值'] = f"{stats.get('DN1O_BGMean', 0):.2f}" if 'DN1O_BGMean' in stats else 'N/A'
+                            row['DN1O_BGDev均值'] = f"{stats.get('DN1O_BGDev', 0):.2f}" if 'DN1O_BGDev' in stats else 'N/A'
                             
                             stats_data.append(row)
                         
@@ -846,10 +1951,22 @@ with tab1:
                                         st.caption(f"X: {data['x_data'].min():.0f}~{data['x_data'].max():.0f}")
                                         st.caption(f"Y: {data['y_data'].min():.0f}~{data['y_data'].max():.0f}")
                                         
-                                        # 显示BGMean统计
-                                        if data['bgmean_stats']:
-                                            st.caption(f"BGMean: {data['bgmean_stats']['min']:.2f}~{data['bgmean_stats']['max']:.2f}")
-                                            st.caption(f"BGMean均值: {data['bgmean_stats']['mean']:.2f}")
+                                        # 显示三个通道的BGMean和BGDev均值
+                                        stats = data.get('bgmean_bgdev_stats', {})
+                                        if stats:
+                                            st.write("**通道统计（均值）：**")
+                                            if 'DW1O_BGMean' in stats:
+                                                st.caption(f"DW1O_BGMean: {stats['DW1O_BGMean']:.2f}")
+                                            if 'DW1O_BGDev' in stats:
+                                                st.caption(f"DW1O_BGDev: {stats['DW1O_BGDev']:.2f}")
+                                            if 'DW2O_BGMean' in stats:
+                                                st.caption(f"DW2O_BGMean: {stats['DW2O_BGMean']:.2f}")
+                                            if 'DW2O_BGDev' in stats:
+                                                st.caption(f"DW2O_BGDev: {stats['DW2O_BGDev']:.2f}")
+                                            if 'DN1O_BGMean' in stats:
+                                                st.caption(f"DN1O_BGMean: {stats['DN1O_BGMean']:.2f}")
+                                            if 'DN1O_BGDev' in stats:
+                                                st.caption(f"DN1O_BGDev: {stats['DN1O_BGDev']:.2f}")
                     
             except Exception as e:
                 st.error(f"处理文件时出错: {str(e)}")
@@ -912,15 +2029,28 @@ with tab1:
                         is_kla_folder = 'kla' in subfolder.lower()
                         
                         if is_kla_folder:
-                            # KLA文件夹：读取jianchu.csv文件
-                            csv_path = os.path.join(folder_path, subfolder, 'jianchu.csv')
+                            # KLA文件夹：读取文件夹内任意CSV或Excel文件
+                            subfolder_path = os.path.join(folder_path, subfolder)
                             
-                            if not os.path.exists(csv_path):
-                                st.warning(f"未找到 {subfolder}/jianchu.csv")
+                            # 查找CSV文件
+                            csv_files = glob.glob(os.path.join(subfolder_path, '*.csv'))
+                            # 查找Excel文件
+                            excel_files = glob.glob(os.path.join(subfolder_path, '*.xlsx')) + glob.glob(os.path.join(subfolder_path, '*.xls'))
+                            
+                            all_files = csv_files + excel_files
+                            
+                            if not all_files:
+                                st.warning(f"未找到 {subfolder} 文件夹中的CSV或Excel文件")
                                 continue
                             
-                            # 读取CSV
-                            df = pd.read_csv(csv_path)
+                            # 使用找到的第一个文件
+                            data_file = all_files[0]
+                            
+                            # 根据文件类型读取
+                            if data_file.endswith('.csv'):
+                                df = pd.read_csv(data_file)
+                            else:
+                                df = pd.read_excel(data_file)
                             
                             # KLA数据不过滤nDefectType
                             # 使用XREL和YREL作为坐标列
@@ -934,7 +2064,7 @@ with tab1:
                                 # KLA数据没有DW1O_BGMean
                                 dw1o_bgmean = None
                             else:
-                                st.warning(f"{subfolder}: jianchu.csv缺少XREL/YREL列")
+                                st.warning(f"{subfolder}: 文件缺少XREL/YREL列")
                                 continue
                         else:
                             # 普通文件夹：查找BlobFeatures.csv或BlobFeatures*.csv文件
@@ -948,25 +2078,26 @@ with tab1:
                             # 读取CSV
                             df = pd.read_csv(csv_path)
                             
-                            # 根据用户选择过滤nDefectType为1000和10001的数据
+                            # 保存原始数据用于统计计算（包含所有nDefectType）
+                            df_original = df.copy()
+                            
+                            # 根据用户选择过滤nDefectType为1000和10001的数据（仅用于绘图）
                             if filter_special_types and 'nDefectType' in df.columns:
                                 df = df[(df['nDefectType'] != 1000) & (df['nDefectType'] != 10001)]
                             
-                            # 获取第4列和第5列（索引3和4）
-                            if df.shape[1] >= 5:
-                                x_col = df.columns[3]
-                                y_col = df.columns[4]
-                                
-                                x_data = pd.to_numeric(df[x_col], errors='coerce')
-                                y_data = pd.to_numeric(df[y_col], errors='coerce')
-                                
-                                # 获取DW1O_BGMean列（如果存在）
-                                dw1o_bgmean = None
-                                if 'DW1O_BGMean' in df.columns:
-                                    dw1o_bgmean = pd.to_numeric(df['DW1O_BGMean'], errors='coerce')
+                            # 优先使用dCenterXCartisian_Calib和dCenterYCartisian_Calib列
+                            if 'dCenterXCartisian_Calib' in df.columns and 'dCenterYCartisian_Calib' in df.columns:
+                                x_col = 'dCenterXCartisian_Calib'
+                                y_col = 'dCenterYCartisian_Calib'
+                            elif 'dCenterXCartisian' in df.columns and 'dCenterYCartisian' in df.columns:
+                                x_col = 'dCenterXCartisian'
+                                y_col = 'dCenterYCartisian'
                             else:
-                                st.warning(f"{subfolder}: BlobFeatures.csv列数不足")
+                                st.warning(f"{subfolder}: BlobFeatures.csv缺少坐标列")
                                 continue
+                            
+                            x_data = pd.to_numeric(df[x_col], errors='coerce')
+                            y_data = pd.to_numeric(df[y_col], errors='coerce')
                         
                         # 过滤有效数据（对KLA和CASI数据都适用）
                         valid_mask = pd.notna(x_data) & pd.notna(y_data)
@@ -974,18 +2105,49 @@ with tab1:
                         y_valid = y_data[valid_mask]
                         
                         if len(x_valid) > 0:
-                            # 计算DW1O_BGMean统计值（排除0值）
-                            bgmean_stats = {}
-                            if dw1o_bgmean is not None:
-                                dw1o_valid = dw1o_bgmean[valid_mask].dropna()
-                                # 排除值为0的数据
-                                dw1o_valid = dw1o_valid[dw1o_valid != 0]
-                                if len(dw1o_valid) > 0:
-                                    bgmean_stats = {
-                                        'min': dw1o_valid.min(),
-                                        'max': dw1o_valid.max(),
-                                        'mean': dw1o_valid.mean()
-                                    }
+                            # 计算三个通道的BGMean和BGDev均值（使用原始数据，包含1000和10001，排除0值）
+                            bgmean_bgdev_stats = {}
+                            
+                            # 只对非KLA文件夹计算统计值
+                            if not is_kla_folder and 'df_original' in locals():
+                                # DW1O通道
+                                if 'DW1O_BGMean' in df_original.columns:
+                                    dw1o_bgmean_all = pd.to_numeric(df_original['DW1O_BGMean'], errors='coerce').dropna()
+                                    dw1o_bgmean_all = dw1o_bgmean_all[dw1o_bgmean_all != 0]
+                                    if len(dw1o_bgmean_all) > 0:
+                                        bgmean_bgdev_stats['DW1O_BGMean'] = dw1o_bgmean_all.mean()
+                                
+                                if 'DW1O_BGDev' in df_original.columns:
+                                    dw1o_bgdev_all = pd.to_numeric(df_original['DW1O_BGDev'], errors='coerce').dropna()
+                                    dw1o_bgdev_all = dw1o_bgdev_all[dw1o_bgdev_all != 0]
+                                    if len(dw1o_bgdev_all) > 0:
+                                        bgmean_bgdev_stats['DW1O_BGDev'] = dw1o_bgdev_all.mean()
+                                
+                                # DW2O通道
+                                if 'DW2O_BGMean' in df_original.columns:
+                                    dw2o_bgmean_all = pd.to_numeric(df_original['DW2O_BGMean'], errors='coerce').dropna()
+                                    dw2o_bgmean_all = dw2o_bgmean_all[dw2o_bgmean_all != 0]
+                                    if len(dw2o_bgmean_all) > 0:
+                                        bgmean_bgdev_stats['DW2O_BGMean'] = dw2o_bgmean_all.mean()
+                                
+                                if 'DW2O_BGDev' in df_original.columns:
+                                    dw2o_bgdev_all = pd.to_numeric(df_original['DW2O_BGDev'], errors='coerce').dropna()
+                                    dw2o_bgdev_all = dw2o_bgdev_all[dw2o_bgdev_all != 0]
+                                    if len(dw2o_bgdev_all) > 0:
+                                        bgmean_bgdev_stats['DW2O_BGDev'] = dw2o_bgdev_all.mean()
+                                
+                                # DN1O通道
+                                if 'DN1O_BGMean' in df_original.columns:
+                                    dn1o_bgmean_all = pd.to_numeric(df_original['DN1O_BGMean'], errors='coerce').dropna()
+                                    dn1o_bgmean_all = dn1o_bgmean_all[dn1o_bgmean_all != 0]
+                                    if len(dn1o_bgmean_all) > 0:
+                                        bgmean_bgdev_stats['DN1O_BGMean'] = dn1o_bgmean_all.mean()
+                                
+                                if 'DN1O_BGDev' in df_original.columns:
+                                    dn1o_bgdev_all = pd.to_numeric(df_original['DN1O_BGDev'], errors='coerce').dropna()
+                                    dn1o_bgdev_all = dn1o_bgdev_all[dn1o_bgdev_all != 0]
+                                    if len(dn1o_bgdev_all) > 0:
+                                        bgmean_bgdev_stats['DN1O_BGDev'] = dn1o_bgdev_all.mean()
                             
                             # 存储数据用于统计
                             all_data.append({
@@ -993,7 +2155,7 @@ with tab1:
                                 'count': len(x_valid),
                                 'x_data': x_valid,
                                 'y_data': y_valid,
-                                'bgmean_stats': bgmean_stats
+                                'bgmean_bgdev_stats': bgmean_bgdev_stats
                             })
                             
                             # 创建悬浮文本
@@ -1092,15 +2254,14 @@ with tab1:
                                 '占比': f"{(data['count'] / total_defects * 100):.2f}%"
                             }
                             
-                            # 添加DW1O_BGMean统计
-                            if data['bgmean_stats']:
-                                row['BGMean最小值'] = f"{data['bgmean_stats']['min']:.2f}"
-                                row['BGMean最大值'] = f"{data['bgmean_stats']['max']:.2f}"
-                                row['BGMean均值'] = f"{data['bgmean_stats']['mean']:.2f}"
-                            else:
-                                row['BGMean最小值'] = 'N/A'
-                                row['BGMean最大值'] = 'N/A'
-                                row['BGMean均值'] = 'N/A'
+                            # 添加三个通道的BGMean和BGDev均值
+                            stats = data.get('bgmean_bgdev_stats', {})
+                            row['DW1O_BGMean均值'] = f"{stats.get('DW1O_BGMean', 0):.2f}" if 'DW1O_BGMean' in stats else 'N/A'
+                            row['DW1O_BGDev均值'] = f"{stats.get('DW1O_BGDev', 0):.2f}" if 'DW1O_BGDev' in stats else 'N/A'
+                            row['DW2O_BGMean均值'] = f"{stats.get('DW2O_BGMean', 0):.2f}" if 'DW2O_BGMean' in stats else 'N/A'
+                            row['DW2O_BGDev均值'] = f"{stats.get('DW2O_BGDev', 0):.2f}" if 'DW2O_BGDev' in stats else 'N/A'
+                            row['DN1O_BGMean均值'] = f"{stats.get('DN1O_BGMean', 0):.2f}" if 'DN1O_BGMean' in stats else 'N/A'
+                            row['DN1O_BGDev均值'] = f"{stats.get('DN1O_BGDev', 0):.2f}" if 'DN1O_BGDev' in stats else 'N/A'
                             
                             stats_data.append(row)
                         
@@ -1239,10 +2400,22 @@ with tab1:
                                         st.caption(f"X: {data['x_data'].min():.0f}~{data['x_data'].max():.0f}")
                                         st.caption(f"Y: {data['y_data'].min():.0f}~{data['y_data'].max():.0f}")
                                         
-                                        # 显示BGMean统计
-                                        if data['bgmean_stats']:
-                                            st.caption(f"BGMean: {data['bgmean_stats']['min']:.2f}~{data['bgmean_stats']['max']:.2f}")
-                                            st.caption(f"BGMean均值: {data['bgmean_stats']['mean']:.2f}")
+                                        # 显示三个通道的BGMean和BGDev均值
+                                        stats = data.get('bgmean_bgdev_stats', {})
+                                        if stats:
+                                            st.write("**通道统计（均值）：**")
+                                            if 'DW1O_BGMean' in stats:
+                                                st.caption(f"DW1O_BGMean: {stats['DW1O_BGMean']:.2f}")
+                                            if 'DW1O_BGDev' in stats:
+                                                st.caption(f"DW1O_BGDev: {stats['DW1O_BGDev']:.2f}")
+                                            if 'DW2O_BGMean' in stats:
+                                                st.caption(f"DW2O_BGMean: {stats['DW2O_BGMean']:.2f}")
+                                            if 'DW2O_BGDev' in stats:
+                                                st.caption(f"DW2O_BGDev: {stats['DW2O_BGDev']:.2f}")
+                                            if 'DN1O_BGMean' in stats:
+                                                st.caption(f"DN1O_BGMean: {stats['DN1O_BGMean']:.2f}")
+                                            if 'DN1O_BGDev' in stats:
+                                                st.caption(f"DN1O_BGDev: {stats['DN1O_BGDev']:.2f}")
                 
         except Exception as e:
             st.error(f"处理文件夹时出错: {str(e)}")
@@ -1253,22 +2426,24 @@ with tab1:
 
     # 新增：缺陷坐标匹配和SNR对比分析
     st.write("---")
-    st.header("📍 缺陷坐标匹配与SNR对比")
+    st.header("📍 多工况间匹配上的缺陷特征对比")
     
-    st.markdown("""
-    ### 功能说明
-    对多个文件夹中的 `jianchu.csv` 文件进行坐标匹配，比较相同缺陷在不同工况下的DW1O_TotalSNR值。
-    
-    **功能特点：**
-    - 匹配范围：50个单位（可调整）
-    - 自动排除文件夹名称包含"KLA"的文件
-    - 输出匹配结果表格，包含坐标、各工况SNR值
-    - 支持导出为CSV文件
-    """)
+    with st.expander("ℹ️ 功能说明", expanded=False):
+        st.markdown("""
+        对多个子文件夹中的CSV文件进行坐标匹配，比较相同缺陷在不同工况下的特征值，包括snr,bgmean,bgdev等。
+        
+        **功能特点：**
+        - 自动读取子文件夹中的任意CSV文件（不限文件名）
+        - 自动过滤nDefectType为1000、10001、10002的数据
+        - 匹配范围：50个单位（可调整）
+        - 自动排除文件夹名称包含"KLA"的文件
+        - 输出匹配结果表格，包含坐标、各工况SNR值
+        - 支持导出为CSV文件
+        """)
     
     # 输入文件夹路径
     match_folder_path = st.text_input("输入主文件夹路径（用于匹配分析）", 
-                                      placeholder=r"例如: D:\data\wafer_folders",
+                                      placeholder=r"例如: D:\hazemap\ClassifyData",
                                       key="match_folder_path")
     
     # 匹配参数
@@ -1304,48 +2479,62 @@ with tab1:
                     
                     with st.spinner("正在读取数据..."):
                         for subfolder in sorted(subfolders):
-                            csv_path = os.path.join(match_folder_path, subfolder, 'jianchu.csv')
+                            # 查找子文件夹中的所有CSV文件
+                            subfolder_path = os.path.join(match_folder_path, subfolder)
+                            csv_files = glob.glob(os.path.join(subfolder_path, '*.csv'))
                             
-                            if os.path.exists(csv_path):
-                                df = pd.read_csv(csv_path)
+                            if not csv_files:
+                                st.warning(f"未找到 {subfolder} 文件夹中的CSV文件")
+                                continue
+                            
+                            # 使用找到的第一个CSV文件
+                            csv_path = csv_files[0]
+                            df = pd.read_csv(csv_path)
+                            
+                            # 过滤nDefectType为1000、10001、10002的数据
+                            original_count = len(df)
+                            if 'nDefectType' in df.columns:
+                                df = df[~df['nDefectType'].isin([1000, 10001, 10002])]
+                                filtered_count = len(df)
+                                st.info(f"{subfolder}: 原始 {original_count} 条，过滤后 {filtered_count} 条")
+                            
+                            # 获取第4列和第5列作为坐标
+                            if df.shape[1] >= 5:
+                                x_col = df.columns[3]
+                                y_col = df.columns[4]
                                 
-                                # 获取第4列和第5列作为坐标
-                                if df.shape[1] >= 5:
-                                    x_col = df.columns[3]
-                                    y_col = df.columns[4]
-                                    
-                                    # 获取DW1O_TotalSNR、DW1O_MaxOrg、DW1O_BGDev列
-                                    snr_col = 'DW1O_TotalSNR' if 'DW1O_TotalSNR' in df.columns else None
-                                    maxorg_col = 'DW1O_MaxOrg' if 'DW1O_MaxOrg' in df.columns else None
-                                    bgdev_col = 'DW1O_BGDev' if 'DW1O_BGDev' in df.columns else None
-                                    
-                                    # 创建数据字典
-                                    data_dict = {
-                                        'x': pd.to_numeric(df[x_col], errors='coerce'),
-                                        'y': pd.to_numeric(df[y_col], errors='coerce'),
-                                    }
-                                    
-                                    if snr_col:
-                                        data_dict['snr'] = pd.to_numeric(df[snr_col], errors='coerce')
-                                    else:
-                                        data_dict['snr'] = None
-                                    
-                                    if maxorg_col:
-                                        data_dict['maxorg'] = pd.to_numeric(df[maxorg_col], errors='coerce')
-                                    else:
-                                        data_dict['maxorg'] = None
-                                    
-                                    if bgdev_col:
-                                        data_dict['bgdev'] = pd.to_numeric(df[bgdev_col], errors='coerce')
-                                    else:
-                                        data_dict['bgdev'] = None
-                                    
-                                    # 创建DataFrame并过滤有效数据
-                                    temp_df = pd.DataFrame(data_dict)
-                                    temp_df = temp_df.dropna(subset=['x', 'y'])
-                                    
-                                    folder_data[subfolder] = temp_df
-                                    st.success(f"✓ {subfolder}: {len(temp_df)} 个缺陷")
+                                # 获取DW1O_TotalSNR、DW1O_MaxOrg、DW1O_BGDev列
+                                snr_col = 'DW1O_TotalSNR' if 'DW1O_TotalSNR' in df.columns else None
+                                maxorg_col = 'DW1O_MaxOrg' if 'DW1O_MaxOrg' in df.columns else None
+                                bgdev_col = 'DW1O_BGDev' if 'DW1O_BGDev' in df.columns else None
+                                
+                                # 创建数据字典
+                                data_dict = {
+                                    'x': pd.to_numeric(df[x_col], errors='coerce'),
+                                    'y': pd.to_numeric(df[y_col], errors='coerce'),
+                                }
+                                
+                                if snr_col:
+                                    data_dict['snr'] = pd.to_numeric(df[snr_col], errors='coerce')
+                                else:
+                                    data_dict['snr'] = None
+                                
+                                if maxorg_col:
+                                    data_dict['maxorg'] = pd.to_numeric(df[maxorg_col], errors='coerce')
+                                else:
+                                    data_dict['maxorg'] = None
+                                
+                                if bgdev_col:
+                                    data_dict['bgdev'] = pd.to_numeric(df[bgdev_col], errors='coerce')
+                                else:
+                                    data_dict['bgdev'] = None
+                                
+                                # 创建DataFrame并过滤有效数据
+                                temp_df = pd.DataFrame(data_dict)
+                                temp_df = temp_df.dropna(subset=['x', 'y'])
+                                
+                                folder_data[subfolder] = temp_df
+                                st.success(f"✓ {subfolder}: {len(temp_df)} 个有效缺陷")
                     
                     if len(folder_data) < 2:
                         st.warning("需要至少2个文件夹的数据才能进行匹配")
@@ -1470,7 +2659,8 @@ with tab1:
                                     label="📥 下载匹配结果（CSV）",
                                     data=csv,
                                     file_name=f"defect_match_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
+                                    mime="text/csv",
+                                    key="download_original_csv"
                                 )
                                 
                                 # SNR对比分析
@@ -1667,67 +2857,1687 @@ with tab1:
     st.write("---")
     st.header("🔍 CASI与KLA匹配分析")
     
-    st.markdown("""
-    ### 功能说明
-    对多个子文件夹进行CASI与KLA的匹配分析，统计过检、漏检和正确检出。
-    
-    **两种数据输入方式：**
-    - **方式1（原有方式）**：主文件夹包含多个子文件夹，每个子文件夹包含对应的CSV文件
-      - 不含"KLA"的子文件夹中的 `BlobFeatures.csv` (CASI数据)
-      - 含"KLA"的子文件夹中的 `jianchu.csv` (KLA数据)
-    - **方式2（新增方式）**：单个文件夹包含所有CSV文件
-      - 名称中包含"kla"的CSV文件为KLA数据
-      - 其他CSV文件为CASI数据
-    
-    **匹配逻辑：**
-    - CASI数据自动过滤nDefectType=1000和10001
-    - 与KLA数据进行坐标匹配
-    - 匹配结果分类：
-      - 0 = 过检（CASI有但KLA无，且为非特殊类型）
-      - -2 = 过检（CASI有但KLA无，但为特殊类型nDefectType=1000/10001）
-      - 1 = 正确检出（一对一）
-      - 3 = 正确检出（多CASI对一KLA，非特殊类型）
-      - 4, 5 = 正确检出（一对多、多对多）
-      - 2 = 漏检（KLA有但CASI无，或CASI为特殊类型）
-      - -3 = 多CASI对一KLA中的特殊类型
-    """)
+    with st.expander("ℹ️ 功能说明", expanded=False):
+        st.markdown("""
+        对多个子文件夹进行CASI与KLA的匹配分析，统计过检、漏检和正确检出。
+        
+        **四种数据输入方式：**
+        
+        **方式1：主文件夹模式**
+        - **方式适用范围**：多个casi文件为不同工况，对应的用一个kla文件，分别在不同文件夹内
+        ```
+        主文件夹/
+        ├── CASI_inspection_1/
+        │   └── BlobFeatures.csv          (CASI数据)
+        ├── CASI_inspection_2/
+        │   └── BlobFeatures.csv          (CASI数据)
+        ├── KLA_1/
+        │   └── *.csv 或 *.xlsx           (KLA数据，任意文件名)
+        └── KLA_2/
+            └── *.csv 或 *.xlsx           (KLA数据，任意文件名)
+        ```
+        - **CASI子文件夹**（不含"KLA"）：读取 `BlobFeatures.csv`
+          - 坐标列：`dCenterXCartisian_Calib`、`dCenterYCartisian_Calib`（或无_Calib版本）
+        - **KLA子文件夹**（含"KLA"）：读取任意CSV或Excel文件
+          - 坐标列：`XREL`、`YREL`
+        
+        **方式2：单文件夹模式**
+        - **方式适用范围**：多个casi文件为不同工况，对应的同一个kla文件，且都在一个文件夹内
+        ```
+        数据文件夹/
+        ├── casi_data_1.csv               (CASI数据)
+        ├── BlobFeatures.csv               (CASI数据)
+        ├── kla_data_1.csv                (KLA数据，文件名含"kla")
+        └── kla_data_2.csv                (KLA数据，文件名含"kla")
+        ```
+        - 名称中包含"kla"的CSV文件为KLA数据
+        - 其他CSV文件为CASI数据
+        
+        **方式3：手动选择文件模式（多Sheet匹配）**
+        - **方式适用范围**：一个CASI文件和一个KLA文件，各包含多个Sheet，按Sheet名称配对匹配
+        ```
+        手动上传：
+        - CASI文件：casi_data.xlsx (包含多个Sheet: Sheet1, Sheet2, Sheet3...)
+        - KLA文件：kla_data.xlsx (包含多个Sheet: Sheet1, Sheet2, Sheet3...)
+        
+        匹配方式：
+        CASI[Sheet1] ←→ KLA[Sheet1]
+        CASI[Sheet2] ←→ KLA[Sheet2]
+        CASI[Sheet3] ←→ KLA[Sheet3]
+        ```
+        - 通过文件上传控件选择CASI和KLA文件
+        - 支持CSV或Excel格式（Excel支持多Sheet）
+        - 自动按Sheet名称配对进行匹配
+        - 每个Sheet单独输出结果 + 总汇总结果
+        
+        **方式4：CASI文件夹 + KLA多Sheet文件匹配**
+        - **方式适用范围**：CASI为文件夹包含多个子文件夹，KLA为单个Excel/CSV文件包含多个Sheet，按文件夹名与Sheet名对应匹配
+        ```
+        CASI主文件夹/
+        ├── slot15/
+        │   └── *.csv                     (CASI数据，任意CSV文件)
+        ├── slot16/
+        │   └── *.csv                     (CASI数据，任意CSV文件)
+        └── slot17/
+            └── *.csv                     (CASI数据，任意CSV文件)
+        
+        KLA文件：kla_data.xlsx
+        ├── slot15                         (KLA数据 Sheet)
+        ├── slot16                         (KLA数据 Sheet)
+        └── slot17                         (KLA数据 Sheet)
+        
+        匹配方式：
+        CASI[slot15/*.csv] ←→ KLA[Sheet: slot15]
+        CASI[slot16/*.csv] ←→ KLA[Sheet: slot16]
+        CASI[slot17/*.csv] ←→ KLA[Sheet: slot17]
+        ```
+        - CASI：选择包含多个子文件夹的主文件夹路径，每个子文件夹包含至少一个CSV文件
+        - CSV文件选择：优先选择文件名包含"BlobFeatures"的文件，否则选择第一个CSV文件
+        - 坐标列：优先使用 dCenterXCartisian_Calib/dCenterYCartisian_Calib，否则使用 dCenterXCartisian/dCenterYCartisian
+        - KLA：手动上传Excel或CSV文件（Excel支持多Sheet）
+        - 按子文件夹名与Sheet名自动匹配
+        - 每个配对单独输出结果 + 总汇总结果
+        
+        **匹配逻辑：**
+        - CASI数据自动过滤nDefectType=1000和10001
+        - 与KLA数据进行坐标匹配
+        - 匹配结果分类：
+          - 0 = 过检（CASI有但KLA无，且为非特殊类型）
+          - -2 = 过检（CASI有但KLA无，但为特殊类型nDefectType=1000/10001）
+          - 1 = 正确检出（一对一）
+          - 3 = 正确检出（多CASI对一KLA，非特殊类型）
+          - 4, 5 = 正确检出（一对多、多对多）
+          - 2 = 漏检（KLA有但CASI无，或CASI为特殊类型）
+          - -3 = 多CASI对一KLA中的特殊类型
+        """)
     
     # 选择输入方式
     st.subheader("选择数据输入方式")
     input_mode = st.radio(
         "选择输入方式",
-        ["方式1：选择主文件夹（原有方式）", "方式2：选择单个文件夹（包含所有CSV）"],
+        ["方式1：选择主文件夹", "方式2：选择单个文件夹（包含所有CSV）", "方式3：手动上传文件（多Sheet匹配）", "方式4：CASI文件夹 + KLA多Sheet文件"],
         key="kla_input_mode"
     )
     
-    # 输入文件夹路径
-    if input_mode == "方式1：选择主文件夹（原有方式）":
+    # 输入文件夹路径或文件上传
+    if input_mode == "方式1：选择主文件夹":
         kla_match_folder = st.text_input("输入主文件夹路径（用于KLA匹配）", 
                                          placeholder=r"例如: D:\data\wafer_folders",
                                          key="kla_match_folder")
-        st.info("📁 方式1：主文件夹包含多个子文件夹，每个子文件夹包含BlobFeatures.csv或jianchu.csv")
-    else:
+        st.info("📁 方式1：主文件夹包含多个子文件夹，CASI文件夹中读取BlobFeatures.csv，KLA文件夹中读取任意CSV/Excel文件")
+    elif input_mode == "方式2：选择单个文件夹（包含所有CSV）":
         kla_match_folder = st.text_input("输入包含所有CSV文件的文件夹路径", 
                                          placeholder=r"例如: D:\data\csv_files",
                                          key="kla_match_folder_single")
         st.info("📁 方式2：文件夹内包含多个CSV文件，其中名称包含'kla'的为KLA数据，其他CSV为CASI数据")
+    elif input_mode == "方式3：手动上传文件（多Sheet匹配）":
+        st.info("📤 方式3：手动上传CASI和KLA文件，支持CSV或Excel格式（Excel可包含多个Sheet）")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            casi_uploaded_file = st.file_uploader(
+                "上传CASI文件",
+                type=['csv', 'xlsx', 'xls'],
+                key="casi_upload_file",
+                help="上传CASI数据文件，支持CSV或Excel格式"
+            )
+        with col2:
+            kla_uploaded_file = st.file_uploader(
+                "上传KLA文件",
+                type=['csv', 'xlsx', 'xls'],
+                key="kla_upload_file",
+                help="上传KLA数据文件，支持CSV或Excel格式"
+            )
+        
+        kla_match_folder = None  # 方式3不需要文件夹路径
+    else:  # 方式4：CASI文件夹 + KLA多Sheet文件
+        st.info("📁📤 方式4：CASI为包含多个子文件夹的主文件夹，KLA为Excel/CSV文件（包含多个Sheet），按文件夹名与Sheet名匹配")
+        
+        kla_match_folder = st.text_input("输入CASI主文件夹路径", 
+                                         placeholder=r"例如: D:\data\casi_folders",
+                                         key="kla_match_folder_mode4")
+        
+        kla_uploaded_file = st.file_uploader(
+            "上传KLA文件（Excel或CSV）",
+            type=['csv', 'xlsx', 'xls'],
+            key="kla_upload_file_mode4",
+            help="上传包含多个Sheet的KLA数据文件"
+        )
     
     # 匹配参数
     col1, col2 = st.columns(2)
     with col1:
         kla_match_threshold = st.number_input("KLA匹配距离阈值", value=200.0, min_value=1.0, max_value=10000.0,
                                              help="CASI和KLA之间的最大匹配距离")
-    with col2:
-        block_size_param = st.number_input("分块大小", value=10000.0, min_value=1000.0,
-                                          help="用于坐标分块处理（如果需要）")
+    # with col2:
+    #     block_size_param = st.number_input("分块大小", value=10000.0, min_value=1000.0,
+    #                                       help="用于坐标分块处理（如果需要）")
     
-    if kla_match_folder and os.path.exists(kla_match_folder):
+    # 方式3：处理手动上传的文件
+    if input_mode == "方式3：手动上传文件（多Sheet匹配）" and casi_uploaded_file and kla_uploaded_file:
+        if st.button("开始KLA匹配分析", type="primary", key="kla_match_btn_upload"):
+            try:
+                from scipy.spatial import KDTree
+                import io
+                
+                with st.spinner("正在读取上传的文件..."):
+                    # 判断文件类型并读取
+                    casi_sheets = {}
+                    kla_sheets = {}
+                    
+                    # 读取CASI文件
+                    if casi_uploaded_file.name.endswith('.csv'):
+                        # CSV文件只有一个"sheet"
+                        casi_sheets['Data'] = pd.read_csv(casi_uploaded_file)
+                        st.info(f"✅ CASI文件：{casi_uploaded_file.name} (CSV格式)")
+                    elif casi_uploaded_file.name.endswith(('.xlsx', '.xls')):
+                        # Excel文件可能有多个sheet
+                        casi_excel = pd.ExcelFile(io.BytesIO(casi_uploaded_file.read()))
+                        for sheet_name in casi_excel.sheet_names:
+                            casi_sheets[sheet_name] = pd.read_excel(casi_excel, sheet_name=sheet_name)
+                        st.info(f"✅ CASI文件：{casi_uploaded_file.name} (Excel格式，包含 {len(casi_sheets)} 个Sheet)")
+                    else:
+                        st.error("不支持的CASI文件格式，请上传CSV或Excel文件")
+                        st.stop()
+                    
+                    # 读取KLA文件
+                    if kla_uploaded_file.name.endswith('.csv'):
+                        kla_sheets['Data'] = pd.read_csv(kla_uploaded_file)
+                        st.info(f"✅ KLA文件：{kla_uploaded_file.name} (CSV格式)")
+                    elif kla_uploaded_file.name.endswith(('.xlsx', '.xls')):
+                        kla_excel = pd.ExcelFile(io.BytesIO(kla_uploaded_file.read()))
+                        for sheet_name in kla_excel.sheet_names:
+                            kla_sheets[sheet_name] = pd.read_excel(kla_excel, sheet_name=sheet_name)
+                        st.info(f"✅ KLA文件：{kla_uploaded_file.name} (Excel格式，包含 {len(kla_sheets)} 个Sheet)")
+                    else:
+                        st.error("不支持的KLA文件格式，请上传CSV或Excel文件")
+                        st.stop()
+                    
+                    # 找到匹配的sheet名称
+                    matching_sheets = []
+                    for casi_sheet_name in casi_sheets.keys():
+                        if casi_sheet_name in kla_sheets:
+                            matching_sheets.append(casi_sheet_name)
+                    
+                    if not matching_sheets:
+                        st.warning("⚠️ 未找到匹配的Sheet名称")
+                        st.write("**CASI Sheets:**", list(casi_sheets.keys()))
+                        st.write("**KLA Sheets:**", list(kla_sheets.keys()))
+                        st.stop()
+                    
+                    st.success(f"🎯 找到 {len(matching_sheets)} 个匹配的Sheet：{', '.join(matching_sheets)}")
+                
+                # 存储所有匹配结果
+                all_match_results = []
+                
+                with st.spinner("正在执行KLA匹配..."):
+                    # 对每个匹配的sheet进行处理
+                    for sheet_name in matching_sheets:
+                        # 获取CASI和KLA数据
+                        casi_df = casi_sheets[sheet_name].copy()
+                        kla_df = kla_sheets[sheet_name].copy()
+                        
+                        # 清理列名
+                        casi_df.columns = casi_df.columns.str.strip()
+                        kla_df.columns = kla_df.columns.str.strip()
+                        
+                        # **重要：标记特殊类型 (不过滤，只标记)**
+                        original_count = len(casi_df)
+                        if 'nDefectType' in casi_df.columns:
+                            casi_df['is_special_type'] = casi_df['nDefectType'].isin([1000, 10001])
+                        else:
+                            casi_df['is_special_type'] = False
+                        
+                        # 获取CASI坐标列（优先使用带Calib后缀的）
+                        cas_x_col = None
+                        cas_y_col = None
+                        
+                        # 优先查找Calib版本
+                        if 'dCenterXCartisian_Calib' in casi_df.columns and 'dCenterYCartisian_Calib' in casi_df.columns:
+                            cas_x_col = 'dCenterXCartisian_Calib'
+                            cas_y_col = 'dCenterYCartisian_Calib'
+                        elif 'dCenterXCartisian' in casi_df.columns and 'dCenterYCartisian' in casi_df.columns:
+                            cas_x_col = 'dCenterXCartisian'
+                            cas_y_col = 'dCenterYCartisian'
+                        else:
+                            # 备选：其他坐标列
+                            for x_candidate in ['dCenterXCartesian', 'XREL', 'cx']:
+                                if x_candidate in casi_df.columns:
+                                    cas_x_col = x_candidate
+                                    break
+                            for y_candidate in ['dCenterYCartesian', 'YREL', 'cy']:
+                                if y_candidate in casi_df.columns:
+                                    cas_y_col = y_candidate
+                                    break
+                        
+                        if cas_x_col is None or cas_y_col is None:
+                            st.warning(f"❌ {sheet_name}: 未找到CASI坐标列")
+                            continue
+                        
+                        # 计算到(150000, 150000)的距离
+                        casi_df['distance_to_center'] = np.sqrt(
+                            (casi_df[cas_x_col] - 150000)**2 + 
+                            (casi_df[cas_y_col] - 150000)**2
+                        )
+                        casi_df['is_edge_point'] = casi_df['distance_to_center'] >= 147000
+                        
+                        # 检查KLA坐标列
+                        if not {'XREL', 'YREL'}.issubset(kla_df.columns):
+                            st.warning(f"❌ {sheet_name}: KLA数据缺少XREL/YREL列")
+                            continue
+                        
+                        # 准备匹配数据列
+                        maxorg_cols = []
+                        if 'DW1O_MaxOrg' in casi_df.columns:
+                            maxorg_cols.append('DW1O_MaxOrg')
+                        if 'DW2O_MaxOrg' in casi_df.columns:
+                            maxorg_cols.append('DW2O_MaxOrg')
+                        if 'DN1O_MaxOrg' in casi_df.columns:
+                            maxorg_cols.append('DN1O_MaxOrg')
+                        has_maxorg = len(maxorg_cols) > 0
+                        
+                        size_cols = []
+                        if 'DW1O_Size' in casi_df.columns:
+                            size_cols.append('DW1O_Size')
+                        if 'DW2O_Size' in casi_df.columns:
+                            size_cols.append('DW2O_Size')
+                        if 'DN1O_Size' in casi_df.columns:
+                            size_cols.append('DN1O_Size')
+                        has_size_cols = len(size_cols) > 0
+                        
+                        # 检查BGMean列
+                        bgmean_cols = []
+                        if 'DW1O_BGMean' in casi_df.columns:
+                            bgmean_cols.append('DW1O_BGMean')
+                        if 'DW2O_BGMean' in casi_df.columns:
+                            bgmean_cols.append('DW2O_BGMean')
+                        if 'DN1O_BGMean' in casi_df.columns:
+                            bgmean_cols.append('DN1O_BGMean')
+                        if 'DW1O_BGDev' in casi_df.columns:
+                            bgmean_cols.append('DW1O_BGDev')
+                        if 'DW2O_BGDev' in casi_df.columns:
+                            bgmean_cols.append('DW2O_BGDev')
+                        if 'DN1O_BGDev' in casi_df.columns:
+                            bgmean_cols.append('DN1O_BGDev')
+                        has_bgmean_cols = len(bgmean_cols) > 0
+                        
+                        # 准备CASI工作数据
+                        cols_to_read = [cas_x_col, cas_y_col, 'is_special_type', 'is_edge_point']
+                        if has_maxorg:
+                            cols_to_read += maxorg_cols
+                        if has_size_cols:
+                            cols_to_read += size_cols
+                        if has_bgmean_cols:
+                            cols_to_read += bgmean_cols
+                        
+                        casi_work = casi_df[cols_to_read].copy()
+                        # 重命名坐标列为XREL/YREL（方式一、二的标准）
+                        casi_work.rename(columns={cas_x_col: 'XREL', cas_y_col: 'YREL'}, inplace=True)
+                        
+                        # 转换数值列
+                        if has_maxorg:
+                            for col in maxorg_cols:
+                                casi_work[col] = pd.to_numeric(casi_work[col], errors='coerce')
+                        if has_size_cols:
+                            for col in size_cols:
+                                casi_work[col] = pd.to_numeric(casi_work[col], errors='coerce')
+                        if has_bgmean_cols:
+                            for col in bgmean_cols:
+                                casi_work[col] = pd.to_numeric(casi_work[col], errors='coerce')
+                        
+                        # 过滤NaN坐标
+                        casi_work = casi_work.dropna(subset=['XREL', 'YREL']).reset_index(drop=True)
+                        
+                        # 确保标记列存在
+                        if 'is_special_type' not in casi_work.columns:
+                            casi_work['is_special_type'] = False
+                        if 'is_edge_point' not in casi_work.columns:
+                            casi_work['is_edge_point'] = False
+                        
+                        # 读取KLA数据
+                        if 'DSIZE' in kla_df.columns:
+                            kla_work = kla_df[['XREL', 'YREL', 'DSIZE']].copy()
+                            kla_work['DSIZE'] = pd.to_numeric(kla_work['DSIZE'], errors='coerce')
+                        else:
+                            kla_work = kla_df[['XREL', 'YREL']].copy()
+                            kla_work['DSIZE'] = np.nan
+                        kla_work = kla_work.dropna(subset=['XREL', 'YREL']).reset_index(drop=True)
+                        
+                        # 初始化匹配结果
+                        casi_match_result = np.full(len(casi_work), np.nan)
+                        kla_matched = np.zeros(len(kla_work), dtype=bool)
+                        kla_miss_type = np.zeros(len(kla_work), dtype=int)  # 0=正确, 1=基础漏检, 2=分类漏检
+                        
+                        # 构建KDTree（方式一、二的算法）
+                        if len(casi_work) > 0 and len(kla_work) > 0:
+                            # 所有CASI的树
+                            casi_pts_all = casi_work[['XREL', 'YREL']].to_numpy()
+                            tree_casi_all = KDTree(casi_pts_all)
+                            
+                            # 非特殊类型CASI
+                            non_special_mask = ~casi_work['is_special_type'].values
+                            non_special_indices = np.where(non_special_mask)[0]
+                            
+                            kla_pts = kla_work[['XREL', 'YREL']].to_numpy()
+                            tree_kla = KDTree(kla_pts)
+                            
+                            # 先标记特殊类型
+                            for casi_idx in range(len(casi_work)):
+                                if casi_work.loc[casi_idx, 'is_special_type']:
+                                    casi_match_result[casi_idx] = -2
+                            
+                            if len(non_special_indices) > 0:
+                                casi_pts_non_special = casi_work.loc[non_special_indices, ['XREL', 'YREL']].to_numpy()
+                                tree_casi_non_special = KDTree(casi_pts_non_special)
+                                
+                                # 第一步：遍历KLA判断漏检类型
+                                for kla_idx in range(len(kla_pts)):
+                                    kla_pt = kla_pts[kla_idx]
+                                    
+                                    # 在非特殊CASI中查找
+                                    casi_non_special_indices_in_tree = tree_casi_non_special.query_ball_point(kla_pt, r=kla_match_threshold)
+                                    
+                                    if len(casi_non_special_indices_in_tree) == 0:
+                                        # 没有非特殊CASI匹配
+                                        kla_matched[kla_idx] = False
+                                        
+                                        # 判断是否有特殊类型CASI
+                                        casi_all_indices = tree_casi_all.query_ball_point(kla_pt, r=kla_match_threshold)
+                                        
+                                        if len(casi_all_indices) == 0:
+                                            kla_miss_type[kla_idx] = 1  # 基础漏检
+                                        else:
+                                            kla_miss_type[kla_idx] = 2  # 分类漏检
+                                        continue
+                                    
+                                    # 有非特殊CASI匹配
+                                    kla_matched[kla_idx] = True
+                                    kla_miss_type[kla_idx] = 0
+                                    
+                                    # 映射回原始索引
+                                    casi_idx_list = [non_special_indices[i] for i in casi_non_special_indices_in_tree]
+                                    
+                                    if len(casi_idx_list) == 1:
+                                        casi_match_result[casi_idx_list[0]] = 1  # 一对一
+                                    else:
+                                        for ci in casi_idx_list:
+                                            casi_match_result[ci] = 3  # 多对一
+                                
+                                # 第二步：遍历非特殊CASI识别过检
+                                for tree_idx, casi_idx in enumerate(non_special_indices):
+                                    casi_pt = casi_pts_non_special[tree_idx]
+                                    kla_idx_list = tree_kla.query_ball_point(casi_pt, r=kla_match_threshold)
+                                    
+                                    cur = casi_match_result[casi_idx]
+                                    
+                                    if len(kla_idx_list) == 0:
+                                        casi_match_result[casi_idx] = 0  # 过检
+                                        continue
+                                    
+                                    # 细化分类
+                                    if pd.notna(cur):
+                                        cur_int = int(cur)
+                                        if cur_int == 1 and len(kla_idx_list) > 1:
+                                            casi_match_result[casi_idx] = 4
+                                        elif cur_int == 3 and len(kla_idx_list) > 1:
+                                            casi_match_result[casi_idx] = 5
+                                    elif len(kla_idx_list) > 1:
+                                        casi_match_result[casi_idx] = 4
+                                
+                                # 处理未匹配的非特殊CASI
+                                for casi_idx in non_special_indices:
+                                    if np.isnan(casi_match_result[casi_idx]):
+                                        casi_match_result[casi_idx] = 0
+                        
+                        # 统计结果
+                        n_overdetect_true = np.sum(casi_match_result == 0)
+                        n_correct_casi = np.sum(np.isin(casi_match_result, [1, 3, 4, 5]))
+                        n_miss_basic = np.sum(kla_miss_type == 1)
+                        n_miss_classified = np.sum(kla_miss_type == 2)
+                        n_miss = n_miss_basic + n_miss_classified
+                        
+                        # 统计DSIZE（与方式一、二一致）
+                        dsize_correct_list = []
+                        dsize_miss_list = []
+                        
+                        # 定义尺寸区间
+                        size_bins = list(range(26, 101))
+                        size_stats = {
+                            'bins': size_bins,
+                            'correct_count': {i: 0 for i in size_bins},
+                            'miss_count': {i: 0 for i in size_bins},
+                            'total_count': {i: 0 for i in size_bins}
+                        }
+                        
+                        if 'DSIZE' in kla_work.columns and len(kla_work) > 0:
+                            for kla_idx in range(len(kla_work)):
+                                dsize_val = kla_work.loc[kla_idx, 'DSIZE']
+                                if pd.notna(dsize_val):
+                                    dsize_nm = dsize_val * 1000  # 转换为nm
+                                    size_bin = int(round(dsize_nm))
+                                    
+                                    if 26 <= size_bin <= 100:
+                                        size_stats['total_count'][size_bin] += 1
+                                        
+                                        if kla_matched[kla_idx]:
+                                            dsize_correct_list.append(dsize_val)
+                                            size_stats['correct_count'][size_bin] += 1
+                                        else:
+                                            dsize_miss_list.append(dsize_val)
+                                            size_stats['miss_count'][size_bin] += 1
+                        
+                        dsize_correct_avg = np.mean(dsize_correct_list) if len(dsize_correct_list) > 0 else 0
+                        dsize_correct_min = np.min(dsize_correct_list) if len(dsize_correct_list) > 0 else 0
+                        dsize_correct_max = np.max(dsize_correct_list) if len(dsize_correct_list) > 0 else 0
+                        
+                        dsize_miss_avg = np.mean(dsize_miss_list) if len(dsize_miss_list) > 0 else 0
+                        dsize_miss_min = np.min(dsize_miss_list) if len(dsize_miss_list) > 0 else 0
+                        dsize_miss_max = np.max(dsize_miss_list) if len(dsize_miss_list) > 0 else 0
+                        
+                        # 统计污染数量 (MaxOrg == 65532)
+                        n_contamination = 0
+                        if has_maxorg:
+                            overdetect_indices = np.where(casi_match_result == 0)[0]
+                            for idx in overdetect_indices:
+                                is_contamination = False
+                                for maxorg_col in maxorg_cols:
+                                    maxorg_val = casi_work.loc[idx, maxorg_col]
+                                    if pd.notna(maxorg_val) and maxorg_val == 65532:
+                                        is_contamination = True
+                                        break
+                                if is_contamination:
+                                    n_contamination += 1
+                        
+                        n_overdetect_true_clean = n_overdetect_true - n_contamination
+                        
+                        # 统计过检尺寸
+                        overdetect_size_stats = {
+                            'dw1o_size': {'mean': 0, 'min': 0, 'max': 0},
+                            'dw2o_size': {'mean': 0, 'min': 0, 'max': 0}
+                        }
+                        
+                        if has_size_cols and n_overdetect_true > 0:
+                            overdetect_indices = np.where(casi_match_result == 0)[0]
+                            
+                            if 'DW1O_Size' in casi_work.columns:
+                                dw1o_values = []
+                                for idx in overdetect_indices:
+                                    val = casi_work.loc[idx, 'DW1O_Size']
+                                    if pd.notna(val) and val > 0 and val != 200000.00:
+                                        dw1o_values.append(val)
+                                if len(dw1o_values) > 0:
+                                    overdetect_size_stats['dw1o_size']['mean'] = np.mean(dw1o_values)
+                                    overdetect_size_stats['dw1o_size']['min'] = np.min(dw1o_values)
+                                    overdetect_size_stats['dw1o_size']['max'] = np.max(dw1o_values)
+                            
+                            if 'DW2O_Size' in casi_work.columns:
+                                dw2o_values = []
+                                for idx in overdetect_indices:
+                                    val = casi_work.loc[idx, 'DW2O_Size']
+                                    if pd.notna(val) and val > 0 and val != 200000.00:
+                                        dw2o_values.append(val)
+                                if len(dw2o_values) > 0:
+                                    overdetect_size_stats['dw2o_size']['mean'] = np.mean(dw2o_values)
+                                    overdetect_size_stats['dw2o_size']['min'] = np.min(dw2o_values)
+                                    overdetect_size_stats['dw2o_size']['max'] = np.max(dw2o_values)
+                        
+                        # 统计BGMean/BGDev（与方式一、二一致）
+                        bgmean_stats = {
+                            '过检': {
+                                'DW1O_BGMean': {'values': [], 'mean': 0},
+                                'DW1O_BGDev': {'values': [], 'mean': 0},
+                                'DW2O_BGMean': {'values': [], 'mean': 0},
+                                'DW2O_BGDev': {'values': [], 'mean': 0},
+                                'DN1O_BGMean': {'values': [], 'mean': 0},
+                                'DN1O_BGDev': {'values': [], 'mean': 0}
+                            },
+                            '正确检出': {
+                                'DW1O_BGMean': {'values': [], 'mean': 0},
+                                'DW1O_BGDev': {'values': [], 'mean': 0},
+                                'DW2O_BGMean': {'values': [], 'mean': 0},
+                                'DW2O_BGDev': {'values': [], 'mean': 0},
+                                'DN1O_BGMean': {'values': [], 'mean': 0},
+                                'DN1O_BGDev': {'values': [], 'mean': 0}
+                            }
+                        }
+                        
+                        # 统计过检的BGMean/BGDev
+                        overdetect_indices = np.where(casi_match_result == 0)[0]
+                        for metric in ['DW1O_BGMean', 'DW1O_BGDev', 'DW2O_BGMean', 'DW2O_BGDev', 'DN1O_BGMean', 'DN1O_BGDev']:
+                            if metric in casi_work.columns:
+                                for idx in overdetect_indices:
+                                    val = casi_work.loc[idx, metric]
+                                    if pd.notna(val) and val > 0:
+                                        bgmean_stats['过检'][metric]['values'].append(val)
+                                if len(bgmean_stats['过检'][metric]['values']) > 0:
+                                    bgmean_stats['过检'][metric]['mean'] = np.mean(bgmean_stats['过检'][metric]['values'])
+                        
+                        # 统计正确检出的BGMean/BGDev
+                        correct_indices = np.where(np.isin(casi_match_result, [1, 3, 4, 5]))[0]
+                        for metric in ['DW1O_BGMean', 'DW1O_BGDev', 'DW2O_BGMean', 'DW2O_BGDev', 'DN1O_BGMean', 'DN1O_BGDev']:
+                            if metric in casi_work.columns:
+                                for idx in correct_indices:
+                                    val = casi_work.loc[idx, metric]
+                                    if pd.notna(val) and val > 0:
+                                        bgmean_stats['正确检出'][metric]['values'].append(val)
+                                if len(bgmean_stats['正确检出'][metric]['values']) > 0:
+                                    bgmean_stats['正确检出'][metric]['mean'] = np.mean(bgmean_stats['正确检出'][metric]['values'])
+                        
+                        # 计算总数和分类后检出数
+                        total_casi = len(casi_work)
+                        total_kla = len(kla_work)
+                        
+                        # 统计边缘过检点
+                        overdetect_edge_count = 0
+                        if 'is_edge_point' in casi_work.columns:
+                            overdetect_indices = np.where(casi_match_result == 0)[0]
+                            for idx in overdetect_indices:
+                                if casi_work.loc[idx, 'is_edge_point']:
+                                    overdetect_edge_count += 1
+                        
+                        # CASI分类后检出数（不包含特殊类型和边缘过检点）
+                        casi_detected_count_raw = np.sum(~casi_work['is_special_type'])
+                        casi_detected_count = casi_detected_count_raw - overdetect_edge_count
+                        
+                        # 计算过检和正确检出
+                        n_correct = total_kla - n_miss
+                        n_overdetect = casi_detected_count - n_correct
+                        n_overdetect_true_filtered = n_overdetect_true - overdetect_edge_count
+                        n_overdetect_clean = n_overdetect_true_clean - overdetect_edge_count
+                        n_miss_total = n_miss
+                        
+                        # 收集坐标数据（用于晶圆图显示）
+                        coord_data = {
+                            '过检': [],
+                            '正确检出': [],
+                            '漏检': []
+                        }
+                        
+                        # 过检坐标
+                        overdetect_indices = np.where(casi_match_result == 0)[0]
+                        for idx in overdetect_indices:
+                            x = casi_work.loc[idx, 'XREL']
+                            y = casi_work.loc[idx, 'YREL']
+                            coord_data['过检'].append((x, y, None, {}))
+                        
+                        # 正确检出坐标
+                        correct_indices = np.where(np.isin(casi_match_result, [1, 3, 4, 5]))[0]
+                        for idx in correct_indices:
+                            x = casi_work.loc[idx, 'XREL']
+                            y = casi_work.loc[idx, 'YREL']
+                            coord_data['正确检出'].append((x, y, None, {}))
+                        
+                        # 漏检坐标
+                        for idx in range(len(kla_work)):
+                            if not kla_matched[idx]:
+                                x = kla_work.loc[idx, 'XREL']
+                                y = kla_work.loc[idx, 'YREL']
+                                coord_data['漏检'].append((x, y, None, {}))
+                        
+                        # 保存结果（完全按照方式一、二的格式）
+                        result = {
+                            'CASI文件夹': sheet_name,  # 改用与方式一、二一致的列名
+                            'KLA文件夹': sheet_name,
+                            'CASI总数': total_casi,
+                            'CASI分类后检出数': int(casi_detected_count),
+                            'KLA总数': total_kla,
+                            '过检(0)': int(n_overdetect),
+                            '真过检': int(n_overdetect_true_filtered),
+                            '过检（去除污染）': int(n_overdetect_clean),
+                            '过检-边缘点数': int(overdetect_edge_count),
+                            '正确检出(1,3,4,5)': int(n_correct),
+                            '漏检-基础检': int(n_miss_basic),
+                            '漏检-分类': int(n_miss_classified),
+                            '漏检总数': int(n_miss_total),
+                            '过检率': f"{n_overdetect/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '真过检率': f"{n_overdetect_true_filtered/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '过检率（去除污染）': f"{n_overdetect_clean/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '检出率': f"{n_correct/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '漏检率-基础': f"{n_miss_basic/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '漏检率-分类': f"{n_miss_classified/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '漏检率（总）': f"{n_miss_total/total_kla*100:.2f}%" if total_kla > 0 else "0%",
+                            '正确检出DSIZE均值': f"{dsize_correct_avg:.6f}",
+                            '正确检出DSIZE最小': f"{dsize_correct_min:.6f}",
+                            '正确检出DSIZE最大': f"{dsize_correct_max:.6f}",
+                            '漏检DSIZE均值': f"{dsize_miss_avg:.6f}",
+                            '漏检DSIZE最小': f"{dsize_miss_min:.6f}",
+                            '漏检DSIZE最大': f"{dsize_miss_max:.6f}",
+                            '过检DW1O_Size均值': f"{overdetect_size_stats['dw1o_size']['mean']:.2f}" if overdetect_size_stats['dw1o_size']['mean'] > 0 else "N/A",
+                            '过检DW1O_Size最小': f"{overdetect_size_stats['dw1o_size']['min']:.2f}" if overdetect_size_stats['dw1o_size']['min'] > 0 else "N/A",
+                            '过检DW1O_Size最大': f"{overdetect_size_stats['dw1o_size']['max']:.2f}" if overdetect_size_stats['dw1o_size']['max'] > 0 else "N/A",
+                            '过检DW2O_Size均值': f"{overdetect_size_stats['dw2o_size']['mean']:.2f}" if overdetect_size_stats['dw2o_size']['mean'] > 0 else "N/A",
+                            '过检DW2O_Size最小': f"{overdetect_size_stats['dw2o_size']['min']:.2f}" if overdetect_size_stats['dw2o_size']['min'] > 0 else "N/A",
+                            '过检DW2O_Size最大': f"{overdetect_size_stats['dw2o_size']['max']:.2f}" if overdetect_size_stats['dw2o_size']['max'] > 0 else "N/A",
+                            'DW1O_BGMean': f"{bgmean_stats['过检']['DW1O_BGMean']['mean']:.2f}" if len(bgmean_stats['过检']['DW1O_BGMean']['values']) > 0 else "N/A",
+                            'DW1O_BGDev': f"{bgmean_stats['过检']['DW1O_BGDev']['mean']:.2f}" if len(bgmean_stats['过检']['DW1O_BGDev']['values']) > 0 else "N/A",
+                            'DW2O_BGMean': f"{bgmean_stats['过检']['DW2O_BGMean']['mean']:.2f}" if len(bgmean_stats['过检']['DW2O_BGMean']['values']) > 0 else "N/A",
+                            'DW2O_BGDev': f"{bgmean_stats['过检']['DW2O_BGDev']['mean']:.2f}" if len(bgmean_stats['过检']['DW2O_BGDev']['values']) > 0 else "N/A",
+                            'DN1O_BGMean': f"{bgmean_stats['过检']['DN1O_BGMean']['mean']:.2f}" if len(bgmean_stats['过检']['DN1O_BGMean']['values']) > 0 else "N/A",
+                            'DN1O_BGDev': f"{bgmean_stats['过检']['DN1O_BGDev']['mean']:.2f}" if len(bgmean_stats['过检']['DN1O_BGDev']['values']) > 0 else "N/A",
+                            'size_stats': size_stats,  # 方式一、二的字段
+                            'overdetect_size_stats': overdetect_size_stats,
+                            'bgmean_stats': bgmean_stats,
+                            'coord_data': coord_data  # 用于晶圆图显示
+                        }
+                        all_match_results.append(result)
+                
+                # 显示详细统计表
+                if all_match_results:
+                    st.session_state.kla_match_results = all_match_results
+                    
+                    # 显示详细表格
+                    st.markdown('<a name="过漏检统计"></a>', unsafe_allow_html=True)
+                    st.subheader("� KLA匹配结果汇总（过漏检统计）")
+                    
+                    results_df = pd.DataFrame(all_match_results)
+                    st.dataframe(results_df, use_container_width=True, height=400)
+                    
+                    # 提供下载
+                    export_columns = [
+                        'CASI文件夹', 'KLA文件夹', 'CASI总数', 'CASI分类后检出数', 'KLA总数',
+                        '过检(0)', '真过检', '过检（去除污染）', '正确检出(1,3,4,5)', 
+                        '漏检-基础检', '漏检-分类', '漏检总数',
+                        '过检率', '真过检率', '过检率（去除污染）', '检出率', 
+                        '漏检率-基础', '漏检率-分类', '漏检率（总）',
+                        '正确检出DSIZE均值', '正确检出DSIZE最小', '正确检出DSIZE最大',
+                        '漏检DSIZE均值', '漏检DSIZE最小', '漏检DSIZE最大',
+                        '过检DW1O_Size均值', '过检DW1O_Size最小', '过检DW1O_Size最大',
+                        '过检DW2O_Size均值', '过检DW2O_Size最小', '过检DW2O_Size最大',
+                        'DW1O_BGMean', 'DW1O_BGDev', 'DW2O_BGMean', 'DW2O_BGDev', 'DN1O_BGMean', 'DN1O_BGDev'
+                    ]
+                    export_cols_available = [col for col in export_columns if col in results_df.columns]
+                    results_df_export = results_df[export_cols_available].copy()
+                    
+                    for col in results_df_export.columns:
+                        if results_df_export[col].dtype == 'object':
+                            results_df_export[col] = results_df_export[col].astype(str)
+                    
+                    csv_output = results_df_export.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button(
+                        label="📥 下载匹配结果（CSV）",
+                        data=csv_output,
+                        file_name=f"kla_match_results_method3_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        key="download_method3_detailed_csv"
+                    )
+                    
+                    # 简化版汇总表
+                    st.write("---")
+                    st.subheader("📊 KLA匹配结果汇总（简化版）")
+                    
+                    st.info("""
+                    **过检分类说明：**
+                    - **过检(0)**：CASI分类后检出数 - 正确检出数（总过检）
+                    - **真过检**：CASI附近真的没有KLA的缺陷
+                    - **去除污染过检**：真过检 - 污染数量（MaxOrg=65532）
+                    
+                    **漏检分类说明：**
+                    - **基础漏检**：KLA附近完全没有CASI检出（任何类型都没有）
+                    - **分类漏检**：KLA附近有CASI检出，但都是特殊类型（nDefectType=1000或10001）
+                    - **漏检总数** = 基础漏检 + 分类漏检
+                    """)
+                    
+                    results_df_simplified = results_df.copy()
+                    simplified_columns = [
+                        'CASI文件夹', 'KLA文件夹', 'CASI总数', 'CASI分类后检出数', 'KLA总数',
+                        '过检(0)', '正确检出(1,3,4,5)', '漏检总数',
+                        '过检率', '检出率', '漏检率（总）'
+                    ]
+                    
+                    simplified_cols_available = [col for col in simplified_columns if col in results_df_simplified.columns]
+                    results_df_simplified = results_df_simplified[simplified_cols_available].copy()
+                    
+                    st.dataframe(results_df_simplified, use_container_width=True, height=400)
+                    
+                    # # 数据验证
+                    # st.write("**📊 数据验证：**")
+                    # all_checks_pass = True
+                    # for idx, row in results_df_simplified.iterrows():
+                    #     casi_detected = row['CASI分类后检出数']
+                    #     overdetect = row['过检(0)']
+                    #     correct = row['正确检出(1,3,4,5)']
+                    #     miss = row['漏检总数']
+                    #     kla_total = row['KLA总数']
+                        
+                    #     expected_correct = casi_detected - overdetect
+                    #     check1_pass = abs(expected_correct - correct) < 0.01
+                        
+                    #     sum_check = correct + miss
+                    #     check2_pass = abs(sum_check - kla_total) < 0.01
+                        
+                    #     status1 = "✅" if check1_pass else "❌"
+                    #     status2 = "✅" if check2_pass else "❌"
+                        
+                    #     if not (check1_pass and check2_pass):
+                    #         all_checks_pass = False
+                        
+                    #     st.write(f"{row['CASI文件夹']} vs {row['KLA文件夹']}: "
+                    #            f"{status1} 正检={casi_detected}-{overdetect}={expected_correct}(实际:{correct}) | "
+                    #            f"{status2} 正检({correct})+漏检({miss})={sum_check}(KLA:{kla_total})")
+                    
+                    # if all_checks_pass:
+                    #     st.success("✅ 所有数据验证通过！")
+                    # else:
+                    #     st.error("❌ 部分数据验证失败，请检查！")
+                    
+                    # 简化版下载
+                    csv_simplified = results_df_simplified.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button(
+                        label="📥 下载简化版匹配结果（CSV）",
+                        data=csv_simplified,
+                        file_name=f"kla_match_results_simplified_method3_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        key="download_method3_simplified_csv"
+                    )
+                    
+                    # 可视化分析
+                    st.write("### 📈 可视化分析")
+                    
+                    fig_stack = go.Figure()
+                    
+                    # 创建组合标签（与方式一、二一致）
+                    results_df['组合'] = results_df['CASI文件夹'] + '\nvs\n' + results_df['KLA文件夹']
+                    
+                    fig_stack.add_trace(go.Bar(
+                        name='过检',
+                        x=results_df['组合'],
+                        y=results_df['过检(0)'],
+                        marker_color="#F5BC02"
+                    ))
+                    fig_stack.add_trace(go.Bar(
+                        name='正确检出',
+                        x=results_df['组合'],
+                        y=results_df['正确检出(1,3,4,5)'],
+                        marker_color="#09A84C"
+                    ))
+                    fig_stack.add_trace(go.Bar(
+                        name='漏检',
+                        x=results_df['组合'],
+                        y=results_df['漏检总数'],
+                        marker_color="#E8384F"
+                    ))
+                    
+                    fig_stack.update_layout(
+                        barmode='stack',
+                        title='过检、正确检出、漏检堆叠图',
+                        xaxis_title='CASI vs KLA',
+                        yaxis_title='数量',
+                        height=500
+                    )
+                    st.plotly_chart(fig_stack, use_container_width=True)
+                    
+                    # === 以下为方式一、二相同的高级分析功能 ===
+                    # 添加晶圆图等高级可视化，与方式一、二保持一致
+                    
+                    # 过漏检缺陷分布图（晶圆图）
+                    st.write("### 🗺️ 过漏检缺陷分布map图")
+                    st.markdown("""
+                    晶圆图显示缺陷的分类情况：
+                    - 🟢 **绿色**：正确检出的缺陷
+                    - 🔵 **蓝色**：漏检的缺陷
+                    - 🔴 **红色**：过检的缺陷
+                    """)
+                    
+                    # 网格显示选项
+                    show_grid_wafer = st.checkbox("显示背景网格", value=False, key="show_grid_wafer_method3", help="控制晶圆图中是否显示背景网格线")
+                    
+                    # 为每个组合创建晶圆图
+                    for idx, row in results_df.iterrows():
+                        with st.expander(f"📊 {row['组合']} - 缺陷分布图", expanded=False):
+                            # 获取该组合的坐标数据
+                            coord_data = row['coord_data']
+                            
+                            # 创建晶圆图
+                            fig_wafer = go.Figure()
+                            
+                            # 添加正确检出的点（绿色）
+                            if '正确检出' in coord_data and len(coord_data['正确检出']) > 0:
+                                correct_coords = coord_data['正确检出']
+                                x_coords = [coord[0] for coord in correct_coords]
+                                y_coords = [coord[1] for coord in correct_coords]
+                                
+                                fig_wafer.add_trace(go.Scatter(
+                                    x=x_coords,
+                                    y=y_coords,
+                                    mode='markers',
+                                    name=f'正确检出 ({len(correct_coords)})',
+                                    marker=dict(
+                                        size=6,
+                                        color="#06AC4B",
+                                        opacity=0.6
+                                    ),
+                                    hovertemplate='<b>正确检出</b><br>X: %{x:.2f}<br>Y: %{y:.2f}<extra></extra>'
+                                ))
+                            
+                            # 添加漏检的点（蓝色）
+                            if '漏检' in coord_data and len(coord_data['漏检']) > 0:
+                                miss_coords = coord_data['漏检']
+                                x_coords = [coord[0] for coord in miss_coords]
+                                y_coords = [coord[1] for coord in miss_coords]
+                                
+                                fig_wafer.add_trace(go.Scatter(
+                                    x=x_coords,
+                                    y=y_coords,
+                                    mode='markers',
+                                    name=f'漏检 ({len(miss_coords)})',
+                                    marker=dict(
+                                        size=6,
+                                        color="#3508FF",
+                                        opacity=0.6
+                                    ),
+                                    hovertemplate='<b>漏检</b><br>X: %{x:.2f}<br>Y: %{y:.2f}<extra></extra>'
+                                ))
+                            
+                            # 添加过检的点（红色）
+                            if '过检' in coord_data and len(coord_data['过检']) > 0:
+                                over_coords = coord_data['过检']
+                                x_coords = [coord[0] for coord in over_coords]
+                                y_coords = [coord[1] for coord in over_coords]
+                                
+                                fig_wafer.add_trace(go.Scatter(
+                                    x=x_coords,
+                                    y=y_coords,
+                                    mode='markers',
+                                    name=f'过检 ({len(over_coords)})',
+                                    marker=dict(
+                                        size=6,
+                                        color="#F50202",
+                                        opacity=0.6
+                                    ),
+                                    hovertemplate='<b>过检</b><br>X: %{x:.2f}<br>Y: %{y:.2f}<extra></extra>'
+                                ))
+                            
+                            # 添加晶圆边界圆
+                            theta = np.linspace(0, 2*np.pi, 100)
+                            circle_x = 150000 + 150000 * np.cos(theta)
+                            circle_y = 150000 + 150000 * np.sin(theta)
+                            
+                            fig_wafer.add_trace(go.Scatter(
+                                x=circle_x,
+                                y=circle_y,
+                                mode='lines',
+                                name='晶圆边界',
+                                line=dict(color='black', width=2),
+                                showlegend=True,
+                                hoverinfo='skip'
+                            ))
+                            
+                            # 设置布局
+                            fig_wafer.update_layout(
+                                title=dict(
+                                    text=f'{row["组合"]} - 缺陷分布',
+                                    x=0.5,
+                                    xanchor='center',
+                                    font=dict(size=16)
+                                ),
+                                xaxis=dict(
+                                    title='X坐标',
+                                    range=[0, 300000],
+                                    scaleanchor="y",
+                                    scaleratio=1,
+                                    showgrid=show_grid_wafer,
+                                    gridcolor='lightgray'
+                                ),
+                                yaxis=dict(
+                                    title='Y坐标',
+                                    range=[0, 300000],
+                                    showgrid=show_grid_wafer,
+                                    gridcolor='lightgray'
+                                ),
+                                plot_bgcolor='white',
+                                hovermode='closest',
+                                width=800,
+                                height=800,
+                                legend=dict(
+                                    orientation="v",
+                                    yanchor="top",
+                                    y=1,
+                                    xanchor="left",
+                                    x=1.02,
+                                    bgcolor='rgba(255,255,255,0.9)',
+                                    bordercolor='gray',
+                                    borderwidth=1
+                                )
+                            )
+                            
+                            st.plotly_chart(fig_wafer, use_container_width=True)
+                            
+                            # 添加保存图表功能
+                            col_save1, col_save2 = st.columns(2)
+                            with col_save1:
+                                # 保存为HTML
+                                html_buffer = fig_wafer.to_html(include_plotlyjs='cdn')
+                                st.download_button(
+                                    label="📥 下载为HTML",
+                                    data=html_buffer,
+                                    file_name=f"缺陷分布_{row['CASI文件夹']}_vs_{row['KLA文件夹']}.html",
+                                    mime="text/html",
+                                    key=f"download_html_method3_{idx}"
+                                )
+                            with col_save2:
+                                # 保存为PNG（需要安装kaleido）- 不带坐标系
+                                # 创建一个用于导出的图表副本，隐藏坐标轴
+                                fig_export = go.Figure(fig_wafer)
+                                fig_export.update_layout(
+                                    xaxis=dict(
+                                        visible=False,
+                                        range=[0, 300000],
+                                        scaleanchor="y",
+                                        scaleratio=1
+                                    ),
+                                    yaxis=dict(
+                                        visible=False,
+                                        range=[0, 300000]
+                                    ),
+                                    showlegend=False,
+                                    title=None,
+                                    plot_bgcolor='white',
+                                    paper_bgcolor='white',
+                                    margin=dict(l=50, r=50, t=50, b=50)  # 增加白色边距
+                                )
+                                
+                                # 尝试导出PNG（高清：1200x1200基础尺寸，scale=3输出3600x3600）
+                                try:
+                                    img_bytes = fig_export.to_image(
+                                        format="png", 
+                                        width=1200,      # 宽度增加到1200
+                                        height=1200,     # 高度增加到1200
+                                        scale=3          # 3倍缩放，输出3600x3600的高清图
+                                    )
+                                    st.download_button(
+                                        label="📥 下载为PNG（高清）",
+                                        data=img_bytes,
+                                        file_name=f"缺陷分布_{row['CASI文件夹']}_vs_{row['KLA文件夹']}_HD.png",
+                                        mime="image/png",
+                                        key=f"download_png_method3_{idx}"
+                                    )
+                                except Exception as e:
+                                    # 如果kaleido未安装，显示安装提示
+                                    st.button(
+                                        "📥 下载为PNG（无坐标）",
+                                        disabled=True,
+                                        key=f"download_png_disabled_method3_{idx}",
+                                        help="需要安装 kaleido"
+                                    )
+                                    st.caption("💡 需要安装: `pip install kaleido`")
+                            
+                            # 显示该组合的统计信息
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.metric("正确检出", len(coord_data.get('正确检出', [])))
+                            with col_b:
+                                st.metric("漏检", len(coord_data.get('漏检', [])))
+                            with col_c:
+                                st.metric("过检", len(coord_data.get('过检', [])))
+                    
+                    # === 方式三的高级分析功能 ===
+                    # 由于方式三已保存了必要的统计数据，可以复用方式一/二的展示代码
+                    
+                    #  按尺寸区间统计（已有数据）
+                    st.write("---")
+                    st.markdown('<a name="按尺寸区间统计_method3"></a>', unsafe_allow_html=True)
+                    st.subheader("🔢 尺寸检出率统计（26nm-100nm）")
+                    
+                    with st.expander("📊 查看按尺寸区间统计详情", expanded=False):
+                        st.markdown("""
+                        按每1nm为一个区间，统计26nm到100nm范围内各尺寸的检出情况。
+                        - **总数**：该尺寸区间的KLA缺陷总数
+                        - **正确检出**：该尺寸区间被正确检出的缺陷数
+                        - **漏检**：该尺寸区间未被检出的缺陷数
+                        - **检出率**：正确检出数 / 总数 × 100%
+                        """)
+                    
+                    # 为每个Sheet生成详细统计表
+                    for idx, result in enumerate(all_match_results):
+                        sheet_name = result['CASI文件夹']
+                        size_stats = result.get('size_stats', None)
+                        
+                        if size_stats is None:
+                            continue
+                        
+                        st.write(f"#### {sheet_name}")
+                        
+                        # 构建详细统计表
+                        detail_rows = []
+                        for size_nm in size_stats['bins']:
+                            total = size_stats['total_count'][size_nm]
+                            correct = size_stats['correct_count'][size_nm]
+                            miss = size_stats['miss_count'][size_nm]
+                            detect_rate = (correct / total * 100) if total > 0 else 0
+                            
+                            # 只显示有数据的区间
+                            if total > 0:
+                                detail_rows.append({
+                                    '尺寸区间(nm)': f"{size_nm}nm",
+                                    'KLA总数': total,
+                                    '正确检出': correct,
+                                    '漏检': miss,
+                                    '检出率': f"{detect_rate:.2f}%"
+                                })
+                        
+                        if detail_rows:
+                            detail_df = pd.DataFrame(detail_rows)
+                            st.dataframe(detail_df, use_container_width=True, height=400)
+                            
+                            # 提供CSV下载
+                            csv_detail = detail_df.to_csv(index=False, encoding='utf-8-sig')
+                            st.download_button(
+                                label=f"📥 下载 {sheet_name} 详细统计（CSV）",
+                                data=csv_detail,
+                                file_name=f"size_detail_{sheet_name}_method3_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                key=f"download_detail_method3_{idx}"
+                            )
+                            
+                            # 绘制检出率曲线图
+                            fig_detect_rate = go.Figure()
+                            
+                            fig_detect_rate.add_trace(go.Scatter(
+                                x=[row['尺寸区间(nm)'] for row in detail_rows],
+                                y=[float(row['检出率'].rstrip('%')) for row in detail_rows],
+                                mode='lines+markers',
+                                name='检出率',
+                                line=dict(color='#4ECDC4', width=2),
+                                marker=dict(size=6),
+                                text=[f"总数:{row['KLA总数']}<br>正确:{row['正确检出']}<br>漏检:{row['漏检']}" 
+                                      for row in detail_rows],
+                                hovertemplate='<b>%{x}</b><br>检出率: %{y:.2f}%<br>%{text}<extra></extra>'
+                            ))
+                            
+                            fig_detect_rate.update_layout(
+                                title=f'{sheet_name} - 各尺寸区间检出率',
+                                xaxis_title='尺寸区间',
+                                yaxis_title='检出率 (%)',
+                                yaxis=dict(range=[0, 105]),
+                                height=500,
+                                hovermode='closest'
+                            )
+                            
+                            st.plotly_chart(fig_detect_rate, use_container_width=True)
+                        else:
+                            st.info(f"{sheet_name}: 26nm-100nm范围内无数据")
+                        
+                        st.write("---")
+                    
+                    # 💡 BGMean值分布（已有数据）
+                    # 提示：方式三功能说明
+                    st.write("---")
+                    with st.expander("ℹ️ 方式三功能说明", expanded=False):
+                        st.markdown("""
+                        **方式三当前支持的分析：**
+                        - ✅ 过漏检统计表（详细版和简化版）
+                        - ✅ 可视化堆叠图
+                        - ✅ 过漏检缺陷分布图（晶圆图）
+                        - ✅ 按尺寸区间统计（26nm-100nm）
+                        
+                        **方式三暂不支持的高级分析：**
+                        - ❌ DSIZE与DW1O_Size对比分析（需要重新读取原始文件进行坐标匹配）
+                        
+                        **如需完整的高级分析功能，请使用方式一或方式二。**
+                        """)
+                    
+                    st.success("✅ 匹配分析完成！")
+                else:
+                    st.warning("未生成任何匹配结果")
+                    
+            except Exception as e:
+                st.error(f"处理上传文件时出错：{str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    # 方式4：CASI文件夹 + KLA多Sheet文件
+    elif input_mode == "方式4：CASI文件夹 + KLA多Sheet文件" and kla_match_folder and os.path.exists(kla_match_folder) and kla_uploaded_file:
+        if st.button("开始KLA匹配分析", type="primary", key="kla_match_btn_mode4"):
+            try:
+                from scipy.spatial import KDTree
+                import io
+                
+                with st.spinner("正在读取CASI文件夹和KLA文件..."):
+                    # 读取CASI文件夹中的所有子文件夹
+                    casi_subfolders = [f for f in os.listdir(kla_match_folder) 
+                                      if os.path.isdir(os.path.join(kla_match_folder, f))]
+                    
+                    if not casi_subfolders:
+                        st.error("❌ CASI主文件夹中未找到任何子文件夹")
+                        st.stop()
+                    
+                    st.info(f"✅ 找到 {len(casi_subfolders)} 个CASI子文件夹：{', '.join(casi_subfolders)}")
+                    
+                    # 读取KLA文件
+                    kla_sheets = {}
+                    if kla_uploaded_file.name.endswith('.csv'):
+                        kla_sheets['Data'] = pd.read_csv(kla_uploaded_file)
+                        st.info(f"✅ KLA文件：{kla_uploaded_file.name} (CSV格式)")
+                    elif kla_uploaded_file.name.endswith(('.xlsx', '.xls')):
+                        kla_excel = pd.ExcelFile(io.BytesIO(kla_uploaded_file.read()))
+                        for sheet_name in kla_excel.sheet_names:
+                            kla_sheets[sheet_name] = pd.read_excel(kla_excel, sheet_name=sheet_name)
+                        st.info(f"✅ KLA文件：{kla_uploaded_file.name} (Excel格式，包含 {len(kla_sheets)} 个Sheet)")
+                    else:
+                        st.error("不支持的KLA文件格式，请上传CSV或Excel文件")
+                        st.stop()
+                    
+                    # 找到匹配的文件夹名和Sheet名
+                    matching_pairs = []
+                    for subfolder_name in casi_subfolders:
+                        if subfolder_name in kla_sheets:
+                            matching_pairs.append(subfolder_name)
+                    
+                    if not matching_pairs:
+                        st.warning("⚠️ 未找到匹配的文件夹名与Sheet名")
+                        st.write("**CASI子文件夹：**", casi_subfolders)
+                        st.write("**KLA Sheets：**", list(kla_sheets.keys()))
+                        st.stop()
+                    
+                    st.success(f"🎯 找到 {len(matching_pairs)} 个匹配对：{', '.join(matching_pairs)}")
+                
+                # 存储所有匹配结果
+                all_match_results = []
+                
+                with st.spinner("正在执行KLA匹配..."):
+                    # 对每个匹配对进行处理
+                    for pair_name in matching_pairs:
+                        # 读取CASI数据
+                        casi_folder_path = os.path.join(kla_match_folder, pair_name)
+                        casi_csv_path = None
+                        
+                        # 查找任意CSV文件
+                        csv_files = [f for f in os.listdir(casi_folder_path) if f.endswith('.csv')]
+                        
+                        if not csv_files:
+                            st.warning(f"❌ {pair_name}: 未找到任何CSV文件")
+                            continue
+                        
+                        # 如果有多个CSV文件，优先选择BlobFeatures，否则选择第一个
+                        if len(csv_files) == 1:
+                            casi_csv_path = os.path.join(casi_folder_path, csv_files[0])
+                        else:
+                            # 优先查找BlobFeatures
+                            blob_files = [f for f in csv_files if 'BlobFeatures' in f]
+                            if blob_files:
+                                casi_csv_path = os.path.join(casi_folder_path, blob_files[0])
+                            else:
+                                casi_csv_path = os.path.join(casi_folder_path, csv_files[0])
+                        
+                        casi_df = pd.read_csv(casi_csv_path)
+                        st.info(f"📄 {pair_name}: 读取文件 {os.path.basename(casi_csv_path)}")
+                        casi_df.columns = casi_df.columns.str.strip()
+                        
+                        # 获取对应的KLA Sheet数据
+                        kla_df = kla_sheets[pair_name].copy()
+                        kla_df.columns = kla_df.columns.str.strip()
+                        
+                        # **重要：标记特殊类型 (不过滤，只标记)**
+                        if 'nDefectType' in casi_df.columns:
+                            casi_df['is_special_type'] = casi_df['nDefectType'].isin([1000, 10001])
+                        else:
+                            casi_df['is_special_type'] = False
+                        
+                        # 获取CASI坐标列
+                        cas_x_col = None
+                        cas_y_col = None
+                        
+                        if 'dCenterXCartisian_Calib' in casi_df.columns and 'dCenterYCartisian_Calib' in casi_df.columns:
+                            cas_x_col = 'dCenterXCartisian_Calib'
+                            cas_y_col = 'dCenterYCartisian_Calib'
+                        elif 'dCenterXCartisian' in casi_df.columns and 'dCenterYCartisian' in casi_df.columns:
+                            cas_x_col = 'dCenterXCartisian'
+                            cas_y_col = 'dCenterYCartisian'
+                        else:
+                            for x_candidate in ['dCenterXCartesian', 'XREL', 'cx']:
+                                if x_candidate in casi_df.columns:
+                                    cas_x_col = x_candidate
+                                    break
+                            for y_candidate in ['dCenterYCartesian', 'YREL', 'cy']:
+                                if y_candidate in casi_df.columns:
+                                    cas_y_col = y_candidate
+                                    break
+                        
+                        if cas_x_col is None or cas_y_col is None:
+                            st.warning(f"❌ {pair_name}: CASI数据未找到坐标列")
+                            continue
+                        
+                        # 计算到(150000, 150000)的距离
+                        casi_df['distance_to_center'] = np.sqrt(
+                            (casi_df[cas_x_col] - 150000)**2 + 
+                            (casi_df[cas_y_col] - 150000)**2
+                        )
+                        casi_df['is_edge_point'] = casi_df['distance_to_center'] >= 147000
+                        
+                        # 检查KLA坐标列
+                        if not {'XREL', 'YREL'}.issubset(kla_df.columns):
+                            st.warning(f"❌ {pair_name}: KLA数据缺少XREL/YREL列")
+                            continue
+                        
+                        # 准备匹配数据列
+                        maxorg_cols = []
+                        if 'DW1O_MaxOrg' in casi_df.columns:
+                            maxorg_cols.append('DW1O_MaxOrg')
+                        if 'DW2O_MaxOrg' in casi_df.columns:
+                            maxorg_cols.append('DW2O_MaxOrg')
+                        if 'DN1O_MaxOrg' in casi_df.columns:
+                            maxorg_cols.append('DN1O_MaxOrg')
+                        has_maxorg = len(maxorg_cols) > 0
+                        
+                        size_cols = []
+                        if 'DW1O_Size' in casi_df.columns:
+                            size_cols.append('DW1O_Size')
+                        if 'DW2O_Size' in casi_df.columns:
+                            size_cols.append('DW2O_Size')
+                        has_size_cols = len(size_cols) > 0
+                        
+                        # 检查BGMean列
+                        bgmean_cols = []
+                        if 'DW1O_BGMean' in casi_df.columns:
+                            bgmean_cols.append('DW1O_BGMean')
+                        if 'DW2O_BGMean' in casi_df.columns:
+                            bgmean_cols.append('DW2O_BGMean')
+                        if 'DN1O_BGMean' in casi_df.columns:
+                            bgmean_cols.append('DN1O_BGMean')
+                        if 'DW1O_BGDev' in casi_df.columns:
+                            bgmean_cols.append('DW1O_BGDev')
+                        if 'DW2O_BGDev' in casi_df.columns:
+                            bgmean_cols.append('DW2O_BGDev')
+                        if 'DN1O_BGDev' in casi_df.columns:
+                            bgmean_cols.append('DN1O_BGDev')
+                        has_bgmean_cols = len(bgmean_cols) > 0
+                        
+                        # 执行匹配（使用与方式1/2/3相同的高效算法）
+                        # 准备CASI工作数据
+                        cols_to_read = [cas_x_col, cas_y_col, 'is_special_type', 'is_edge_point']
+                        if has_maxorg:
+                            cols_to_read += maxorg_cols
+                        if has_size_cols:
+                            cols_to_read += size_cols
+                        if has_bgmean_cols:
+                            cols_to_read += bgmean_cols
+                        
+                        casi_work = casi_df[cols_to_read].copy()
+                        # 重命名坐标列为XREL/YREL（标准化）
+                        casi_work.rename(columns={cas_x_col: 'XREL', cas_y_col: 'YREL'}, inplace=True)
+                        
+                        # 转换数值列
+                        if has_maxorg:
+                            for col in maxorg_cols:
+                                casi_work[col] = pd.to_numeric(casi_work[col], errors='coerce')
+                        if has_size_cols:
+                            for col in size_cols:
+                                casi_work[col] = pd.to_numeric(casi_work[col], errors='coerce')
+                        if has_bgmean_cols:
+                            for col in bgmean_cols:
+                                casi_work[col] = pd.to_numeric(casi_work[col], errors='coerce')
+                        
+                        # 过滤NaN坐标
+                        original_casi_len = len(casi_work)
+                        casi_work = casi_work.dropna(subset=['XREL', 'YREL']).reset_index(drop=True)
+                        if len(casi_work) < original_casi_len:
+                            st.warning(f"⚠️ {pair_name}: 过滤掉 {original_casi_len - len(casi_work)} 个CASI点（坐标无效）")
+                        
+                        # 确保标记列存在
+                        if 'is_special_type' not in casi_work.columns:
+                            casi_work['is_special_type'] = False
+                        if 'is_edge_point' not in casi_work.columns:
+                            casi_work['is_edge_point'] = False
+                        
+                        # 读取KLA数据
+                        if 'DSIZE' in kla_df.columns:
+                            kla_work = kla_df[['XREL', 'YREL', 'DSIZE']].copy()
+                            kla_work['DSIZE'] = pd.to_numeric(kla_work['DSIZE'], errors='coerce')
+                        else:
+                            kla_work = kla_df[['XREL', 'YREL']].copy()
+                            kla_work['DSIZE'] = np.nan
+                        
+                        original_kla_len = len(kla_work)
+                        kla_work = kla_work.dropna(subset=['XREL', 'YREL']).reset_index(drop=True)
+                        if len(kla_work) < original_kla_len:
+                            st.warning(f"⚠️ {pair_name}: 过滤掉 {original_kla_len - len(kla_work)} 个KLA点（坐标无效）")
+                        
+                        # 初始化匹配结果
+                        casi_match_result = np.full(len(casi_work), np.nan)
+                        kla_matched = np.zeros(len(kla_work), dtype=bool)
+                        kla_miss_type = np.zeros(len(kla_work), dtype=int)  # 0=正确, 1=基础漏检, 2=分类漏检
+                        
+                        # 构建KDTree（使用与方式1/2/3相同的算法）
+                        if len(casi_work) > 0 and len(kla_work) > 0:
+                            # 所有CASI的树
+                            casi_pts_all = casi_work[['XREL', 'YREL']].to_numpy()
+                            tree_casi_all = KDTree(casi_pts_all)
+                            
+                            # 非特殊类型CASI
+                            non_special_mask = ~casi_work['is_special_type'].values
+                            non_special_indices = np.where(non_special_mask)[0]
+                            
+                            kla_pts = kla_work[['XREL', 'YREL']].to_numpy()
+                            tree_kla = KDTree(kla_pts)
+                            
+                            # 先标记特殊类型
+                            for casi_idx in range(len(casi_work)):
+                                if casi_work.loc[casi_idx, 'is_special_type']:
+                                    casi_match_result[casi_idx] = -2
+                            
+                            if len(non_special_indices) > 0:
+                                casi_pts_non_special = casi_work.loc[non_special_indices, ['XREL', 'YREL']].to_numpy()
+                                tree_casi_non_special = KDTree(casi_pts_non_special)
+                                
+                                # 第一步：遍历KLA判断漏检类型
+                                for kla_idx in range(len(kla_pts)):
+                                    kla_pt = kla_pts[kla_idx]
+                                    
+                                    # 在非特殊CASI中查找
+                                    casi_non_special_indices_in_tree = tree_casi_non_special.query_ball_point(kla_pt, r=kla_match_threshold)
+                                    
+                                    if len(casi_non_special_indices_in_tree) == 0:
+                                        # 没有非特殊CASI匹配
+                                        kla_matched[kla_idx] = False
+                                        
+                                        # 判断是否有特殊类型CASI
+                                        casi_all_indices = tree_casi_all.query_ball_point(kla_pt, r=kla_match_threshold)
+                                        
+                                        if len(casi_all_indices) == 0:
+                                            kla_miss_type[kla_idx] = 1  # 基础漏检
+                                        else:
+                                            kla_miss_type[kla_idx] = 2  # 分类漏检
+                                        continue
+                                    
+                                    # 有非特殊CASI匹配
+                                    kla_matched[kla_idx] = True
+                                    kla_miss_type[kla_idx] = 0
+                                    
+                                    # 映射回原始索引
+                                    casi_idx_list = [non_special_indices[i] for i in casi_non_special_indices_in_tree]
+                                    
+                                    if len(casi_idx_list) == 1:
+                                        casi_match_result[casi_idx_list[0]] = 1  # 一对一
+                                    else:
+                                        for ci in casi_idx_list:
+                                            casi_match_result[ci] = 3  # 多对一
+                                
+                                # 第二步：遍历非特殊CASI识别过检
+                                for tree_idx, casi_idx in enumerate(non_special_indices):
+                                    casi_pt = casi_pts_non_special[tree_idx]
+                                    kla_idx_list = tree_kla.query_ball_point(casi_pt, r=kla_match_threshold)
+                                    
+                                    cur = casi_match_result[casi_idx]
+                                    
+                                    if len(kla_idx_list) == 0:
+                                        casi_match_result[casi_idx] = 0  # 过检
+                                        continue
+                                    
+                                    # 细化分类
+                                    if pd.notna(cur):
+                                        cur_int = int(cur)
+                                        if cur_int == 1 and len(kla_idx_list) > 1:
+                                            casi_match_result[casi_idx] = 4
+                                        elif cur_int == 3 and len(kla_idx_list) > 1:
+                                            casi_match_result[casi_idx] = 5
+                                    elif len(kla_idx_list) > 1:
+                                        casi_match_result[casi_idx] = 4
+                                
+                                # 处理未匹配的非特殊CASI
+                                for casi_idx in non_special_indices:
+                                    if np.isnan(casi_match_result[casi_idx]):
+                                        casi_match_result[casi_idx] = 0
+                        
+                        # 统计结果（与方式1/2/3一致）
+                        n_overdetect_true = np.sum(casi_match_result == 0)
+                        n_correct_casi = np.sum(np.isin(casi_match_result, [1, 3, 4, 5]))
+                        n_miss_basic = np.sum(kla_miss_type == 1)
+                        n_miss_classified = np.sum(kla_miss_type == 2)
+                        n_miss = n_miss_basic + n_miss_classified
+                        
+                        # 为了保持与原有输出格式兼容
+                        n_correct = n_correct_casi
+                        n_overdetect_all = n_overdetect_true
+                        n_overdetect_special = np.sum(casi_match_result == -2)
+                        n_missed = n_miss
+                        
+                        # 统计contamination
+                        n_contamination = 0
+                        if has_maxorg and n_overdetect_true > 0:
+                            overdetect_indices = np.where(casi_match_result == 0)[0]
+                            for idx in overdetect_indices:
+                                is_contamination = False
+                                for maxorg_col in maxorg_cols:
+                                    maxorg_val = casi_work.loc[idx, maxorg_col]
+                                    if pd.notna(maxorg_val) and maxorg_val == 65532:
+                                        is_contamination = True
+                                        break
+                                if is_contamination:
+                                    n_contamination += 1
+                        
+                        n_overdetect_true_clean = n_overdetect_true - n_contamination
+                        
+                        # 统计过检尺寸
+                        overdetect_size_stats = {
+                            'dw1o_size': {'mean': 0, 'min': 0, 'max': 0},
+                            'dw2o_size': {'mean': 0, 'min': 0, 'max': 0}
+                        }
+                        
+                        if has_size_cols and n_overdetect_true > 0:
+                            overdetect_indices = np.where(casi_match_result == 0)[0]
+                            
+                            if 'DW1O_Size' in casi_work.columns:
+                                dw1o_values = []
+                                for idx in overdetect_indices:
+                                    val = casi_work.loc[idx, 'DW1O_Size']
+                                    if pd.notna(val) and val > 0 and val != 200000.00:
+                                        dw1o_values.append(val)
+                                if len(dw1o_values) > 0:
+                                    overdetect_size_stats['dw1o_size']['mean'] = np.mean(dw1o_values)
+                                    overdetect_size_stats['dw1o_size']['min'] = np.min(dw1o_values)
+                                    overdetect_size_stats['dw1o_size']['max'] = np.max(dw1o_values)
+                            
+                            if 'DW2O_Size' in casi_work.columns:
+                                dw2o_values = []
+                                for idx in overdetect_indices:
+                                    val = casi_work.loc[idx, 'DW2O_Size']
+                                    if pd.notna(val) and val > 0 and val != 200000.00:
+                                        dw2o_values.append(val)
+                                if len(dw2o_values) > 0:
+                                    overdetect_size_stats['dw2o_size']['mean'] = np.mean(dw2o_values)
+                                    overdetect_size_stats['dw2o_size']['min'] = np.min(dw2o_values)
+                                    overdetect_size_stats['dw2o_size']['max'] = np.max(dw2o_values)
+                        
+                        # 统计BGMean/BGDev
+                        bgmean_stats = {
+                            '过检': {
+                                'DW1O_BGMean': {'values': [], 'mean': 0},
+                                'DW1O_BGDev': {'values': [], 'mean': 0},
+                                'DW2O_BGMean': {'values': [], 'mean': 0},
+                                'DW2O_BGDev': {'values': [], 'mean': 0},
+                                'DN1O_BGMean': {'values': [], 'mean': 0},
+                                'DN1O_BGDev': {'values': [], 'mean': 0}
+                            },
+                            '正确检出': {
+                                'DW1O_BGMean': {'values': [], 'mean': 0},
+                                'DW1O_BGDev': {'values': [], 'mean': 0},
+                                'DW2O_BGMean': {'values': [], 'mean': 0},
+                                'DW2O_BGDev': {'values': [], 'mean': 0},
+                                'DN1O_BGMean': {'values': [], 'mean': 0},
+                                'DN1O_BGDev': {'values': [], 'mean': 0}
+                            }
+                        }
+                        
+                        # 统计过检的BGMean/BGDev
+                        overdetect_indices = np.where(casi_match_result == 0)[0]
+                        for metric in ['DW1O_BGMean', 'DW1O_BGDev', 'DW2O_BGMean', 'DW2O_BGDev', 'DN1O_BGMean', 'DN1O_BGDev']:
+                            if metric in casi_work.columns:
+                                for idx in overdetect_indices:
+                                    val = casi_work.loc[idx, metric]
+                                    if pd.notna(val) and val > 0:
+                                        bgmean_stats['过检'][metric]['values'].append(val)
+                                if len(bgmean_stats['过检'][metric]['values']) > 0:
+                                    bgmean_stats['过检'][metric]['mean'] = np.mean(bgmean_stats['过检'][metric]['values'])
+                        
+                        # 统计正确检出的BGMean/BGDev
+                        correct_indices = np.where(np.isin(casi_match_result, [1, 3, 4, 5]))[0]
+                        for metric in ['DW1O_BGMean', 'DW1O_BGDev', 'DW2O_BGMean', 'DW2O_BGDev', 'DN1O_BGMean', 'DN1O_BGDev']:
+                            if metric in casi_work.columns:
+                                for idx in correct_indices:
+                                    val = casi_work.loc[idx, metric]
+                                    if pd.notna(val) and val > 0:
+                                        bgmean_stats['正确检出'][metric]['values'].append(val)
+                                if len(bgmean_stats['正确检出'][metric]['values']) > 0:
+                                    bgmean_stats['正确检出'][metric]['mean'] = np.mean(bgmean_stats['正确检出'][metric]['values'])
+                        
+                        # 计算总数和分类后检出数
+                        total_casi = len(casi_work)
+                        total_kla = len(kla_work)
+                        
+                        # 统计边缘过检点
+                        overdetect_edge_count = 0
+                        if 'is_edge_point' in casi_work.columns:
+                            overdetect_indices = np.where(casi_match_result == 0)[0]
+                            for idx in overdetect_indices:
+                                if casi_work.loc[idx, 'is_edge_point']:
+                                    overdetect_edge_count += 1
+                        
+                        # CASI分类后检出数
+                        casi_detected_count_raw = np.sum(~casi_work['is_special_type'])
+                        casi_detected_count = casi_detected_count_raw - overdetect_edge_count
+                        
+                        # 计算准确率
+                        if casi_detected_count > 0:
+                            accuracy = (n_correct / casi_detected_count) * 100
+                        else:
+                            accuracy = 0
+                        
+                        if total_kla > 0:
+                            missed_rate = (n_missed / total_kla) * 100
+                        else:
+                            missed_rate = 0
+                        
+                        # 保存结果
+                        match_result = {
+                            'casi_name': pair_name,
+                            'kla_name': pair_name,
+                            'total_casi': total_casi,
+                            'casi_detected_count': casi_detected_count,
+                            'total_kla': total_kla,
+                            'n_correct': n_correct,
+                            'n_overdetect_all': n_overdetect_all,
+                            'n_overdetect_special': n_overdetect_special,
+                            'n_overdetect_true': n_overdetect_true,
+                            'n_contamination': n_contamination,
+                            'n_overdetect_true_clean': n_overdetect_true_clean,
+                            'n_missed': n_missed,
+                            'n_miss_basic': n_miss_basic,
+                            'n_miss_classified': n_miss_classified,
+                            'overdetect_edge_count': overdetect_edge_count,
+                            'accuracy': accuracy,
+                            'missed_rate': missed_rate,
+                            'overdetect_size_stats': overdetect_size_stats,
+                            'bgmean_stats': bgmean_stats,
+                            'casi_df': casi_work,
+                            'kla_df': kla_work,
+                            'casi_match_result': casi_match_result,
+                            'kla_matched': kla_matched,
+                            'kla_miss_type': kla_miss_type
+                        }
+                        all_match_results.append(match_result)
+                        
+                        st.success(f"✅ {pair_name}: 匹配完成")
+                
+                # 显示结果（使用与方式3相同的显示逻辑）
+                if all_match_results:
+                    st.session_state.kla_match_results = all_match_results
+                    
+                    st.markdown("---")
+                    st.subheader("📊 匹配结果汇总")
+                    
+                    # 创建汇总表
+                    summary_data = []
+                    for result in all_match_results:
+                        summary_data.append({
+                            'CASI文件夹': result['casi_name'],
+                            'KLA Sheet': result['kla_name'],
+                            'CASI总数': result['total_casi'],
+                            'CASI分类后检出数': result['casi_detected_count'],
+                            'KLA总数': result['total_kla'],
+                            '正确检出': result['n_correct'],
+                            '过检(全部)': result['n_overdetect_all'],
+                            '过检(特殊类型)': result['n_overdetect_special'],
+                            '过检(真实)': result['n_overdetect_true'],
+                            '过检(污染)': result['n_contamination'],
+                            '过检(真实-去污染)': result['n_overdetect_true_clean'],
+                            '边缘过检点': result['overdetect_edge_count'],
+                            '漏检': result['n_missed'],
+                            '准确率(%)': f"{result['accuracy']:.2f}",
+                            '漏检率(%)': f"{result['missed_rate']:.2f}"
+                        })
+                    
+                    summary_df = pd.DataFrame(summary_data)
+                    st.dataframe(summary_df, use_container_width=True)
+                    
+                    # 下载汇总结果
+                    csv_summary = summary_df.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        label="📥 下载汇总结果 (CSV)",
+                        data=csv_summary,
+                        file_name="kla_match_summary_mode4.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # 总体统计
+                    st.markdown("---")
+                    st.subheader("📈 总体统计")
+                    
+                    total_casi_all = sum([r['total_casi'] for r in all_match_results])
+                    total_casi_detected = sum([r['casi_detected_count'] for r in all_match_results])
+                    total_kla_all = sum([r['total_kla'] for r in all_match_results])
+                    total_correct = sum([r['n_correct'] for r in all_match_results])
+                    total_overdetect_all = sum([r['n_overdetect_all'] for r in all_match_results])
+                    total_overdetect_special = sum([r['n_overdetect_special'] for r in all_match_results])
+                    total_overdetect_true = sum([r['n_overdetect_true'] for r in all_match_results])
+                    total_contamination = sum([r['n_contamination'] for r in all_match_results])
+                    total_overdetect_true_clean = sum([r['n_overdetect_true_clean'] for r in all_match_results])
+                    total_edge_overdetect = sum([r['overdetect_edge_count'] for r in all_match_results])
+                    total_missed = sum([r['n_missed'] for r in all_match_results])
+                    
+                    overall_accuracy = (total_correct / total_casi_detected * 100) if total_casi_detected > 0 else 0
+                    overall_missed_rate = (total_missed / total_kla_all * 100) if total_kla_all > 0 else 0
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("总CASI数", total_casi_all)
+                        st.metric("总CASI分类后检出数", total_casi_detected)
+                    with col2:
+                        st.metric("总KLA数", total_kla_all)
+                        st.metric("总正确检出", total_correct)
+                    with col3:
+                        st.metric("总过检(全部)", total_overdetect_all)
+                        st.metric("总过检(真实)", total_overdetect_true)
+                        st.metric("总过检(真实-去污染)", total_overdetect_true_clean)
+                    with col4:
+                        st.metric("总漏检", total_missed)
+                        st.metric("总体准确率", f"{overall_accuracy:.2f}%")
+                        st.metric("总体漏检率", f"{overall_missed_rate:.2f}%")
+                    
+                    st.markdown(f"""
+                    **说明：**
+                    - 总过检(全部) = {total_overdetect_all}（包含边缘过检点 {total_edge_overdetect}）
+                    - 总过检(特殊类型) = {total_overdetect_special}
+                    - 总过检(真实) = {total_overdetect_true}
+                    - 总过检(污染) = {total_contamination}
+                    - 总过检(真实-去污染) = {total_overdetect_true_clean}
+                    """)
+                    
+                    st.success("✅ 匹配分析完成！")
+                else:
+                    st.warning("未生成任何匹配结果")
+                    
+            except Exception as e:
+                st.error(f"处理方式4时出错：{str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    elif kla_match_folder and os.path.exists(kla_match_folder):
         if st.button("开始KLA匹配分析", type="primary", key="kla_match_btn"):
             try:
                 from scipy.spatial import KDTree
                 
                 # 根据输入方式处理
-                if input_mode == "方式1：选择主文件夹（原有方式）":
+                if input_mode == "方式1：选择主文件夹":
                     # 原有方式：获取所有子文件夹
                     all_subfolders = [f for f in os.listdir(kla_match_folder) 
                                      if os.path.isdir(os.path.join(kla_match_folder, f))]
@@ -1756,20 +4566,20 @@ with tab1:
                 elif not kla_folders:
                     st.warning("未找到KLA数据")
                 else:
-                    if input_mode == "方式1：选择主文件夹（原有方式）":
+                    if input_mode == "方式1：选择主文件夹":
                         st.info(f"找到 {len(casi_folders)} 个CASI文件夹，{len(kla_folders)} 个KLA文件夹")
                     else:
                         st.info(f"找到 {len(casi_folders)} 个CASI CSV文件，{len(kla_folders)} 个KLA CSV文件")
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        if input_mode == "方式1：选择主文件夹（原有方式）":
+                        if input_mode == "方式1：选择主文件夹":
                             st.write("**CASI文件夹：**")
                         else:
                             st.write("**CASI CSV文件：**")
                         st.write(casi_folders)
                     with col2:
-                        if input_mode == "方式1：选择主文件夹（原有方式）":
+                        if input_mode == "方式1：选择主文件夹":
                             st.write("**KLA文件夹：**")
                         else:
                             st.write("**KLA CSV文件：**")
@@ -1827,21 +4637,31 @@ with tab1:
                                 casi_df['is_special_type'] = False
                             
                             filtered_count = len(casi_df)
-                            st.info(f"{casi_folder}: 原始数据 {original_count} 条，包含特殊类型标记")
+                            # st.info(f"{casi_folder}: 原始数据 {original_count} 条，包含特殊类型标记")
                             
                             # 统计基础检出个数（全部数据）
                             blob_count = original_count
-                            # 获取CASI坐标列
+                            # 获取CASI坐标列（优先使用带Calib后缀的）
                             cas_x_col = None
                             cas_y_col = None
-                            for x_candidate in ['dCenterXCartisian', 'dCenterXCartesian', 'XREL', 'cx']:
-                                if x_candidate in casi_df.columns:
-                                    cas_x_col = x_candidate
-                                    break
-                            for y_candidate in ['dCenterYCartisian', 'dCenterYCartesian', 'YREL', 'cy']:
-                                if y_candidate in casi_df.columns:
-                                    cas_y_col = y_candidate
-                                    break
+                            
+                            # 优先查找Calib版本
+                            if 'dCenterXCartisian_Calib' in casi_df.columns and 'dCenterYCartisian_Calib' in casi_df.columns:
+                                cas_x_col = 'dCenterXCartisian_Calib'
+                                cas_y_col = 'dCenterYCartisian_Calib'
+                            elif 'dCenterXCartisian' in casi_df.columns and 'dCenterYCartisian' in casi_df.columns:
+                                cas_x_col = 'dCenterXCartisian'
+                                cas_y_col = 'dCenterYCartisian'
+                            else:
+                                # 备选：其他坐标列
+                                for x_candidate in ['dCenterXCartesian', 'XREL', 'cx']:
+                                    if x_candidate in casi_df.columns:
+                                        cas_x_col = x_candidate
+                                        break
+                                for y_candidate in ['dCenterYCartesian', 'YREL', 'cy']:
+                                    if y_candidate in casi_df.columns:
+                                        cas_y_col = y_candidate
+                                        break
                             
                             if cas_x_col is None or cas_y_col is None:
                                 st.warning(f"{casi_folder}: 未找到坐标列")
@@ -1859,17 +4679,37 @@ with tab1:
                             for kla_folder in sorted(kla_folders):
                                 # 根据输入方式读取KLA文件
                                 if input_mode == "方式1：选择主文件夹（原有方式）":
-                                    # 原有方式：从子文件夹读取jianchu.csv
-                                    kla_csv_path = os.path.join(kla_match_folder, kla_folder, 'jianchu.csv')
+                                    # 原有方式：从子文件夹读取任意CSV或Excel文件
+                                    kla_subfolder_path = os.path.join(kla_match_folder, kla_folder)
+                                    
+                                    # 查找CSV文件
+                                    csv_files = glob.glob(os.path.join(kla_subfolder_path, '*.csv'))
+                                    # 查找Excel文件
+                                    excel_files = glob.glob(os.path.join(kla_subfolder_path, '*.xlsx')) + glob.glob(os.path.join(kla_subfolder_path, '*.xls'))
+                                    
+                                    all_files = csv_files + excel_files
+                                    
+                                    if not all_files:
+                                        st.warning(f"未找到 {kla_folder} 文件夹中的CSV或Excel文件")
+                                        continue
+                                    
+                                    # 使用找到的第一个文件
+                                    kla_data_file = all_files[0]
+                                    
+                                    # 根据文件类型读取
+                                    if kla_data_file.endswith('.csv'):
+                                        kla_df = pd.read_csv(kla_data_file)
+                                    else:
+                                        kla_df = pd.read_excel(kla_data_file)
                                 else:
                                     # 新方式：直接读取CSV文件
                                     kla_csv_path = os.path.join(kla_match_folder, f"{kla_folder}.csv")
+                                    
+                                    if not os.path.exists(kla_csv_path):
+                                        continue
+                                    
+                                    kla_df = pd.read_csv(kla_csv_path)
                                 
-                                if not os.path.exists(kla_csv_path):
-                                    continue
-                                
-                                # 读取KLA数据
-                                kla_df = pd.read_csv(kla_csv_path)
                                 kla_df.columns = kla_df.columns.str.strip()
                                 
                                 if not {'XREL', 'YREL'}.issubset(kla_df.columns):
@@ -2761,9 +5601,6 @@ with tab1:
                                     'totalsnr_size_stats': totalsnr_size_stats,  # 保存TotalSNR按尺寸分布统计信息
                                     'coord_data': coord_data  # 保存每种类型的坐标数据，用于共有率分析
                                 })
-                                
-                                st.success(f"✓ {casi_folder} vs {kla_folder}: 过检(0)={n_overdetect}(真过检={n_overdetect_true}, 去污染={n_overdetect_clean}), "
-                                          f"正确={n_correct}, 漏检={n_miss_total}(基础={n_miss_basic}, 分类={n_miss_classified})")
                     
                     if all_match_results:
                         # 保存到 session_state 供共有率分析使用
@@ -2804,7 +5641,8 @@ with tab1:
                             label="📥 下载匹配结果（CSV）",
                             data=csv_output,
                             file_name=f"kla_match_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
+                            mime="text/csv",
+                            key="download_method1_detailed_csv"
                         )
                         
                         # 新增：简化版汇总表
@@ -2844,38 +5682,38 @@ with tab1:
                         # 显示简化表格
                         st.dataframe(results_df_simplified, use_container_width=True, height=400)
                         
-                        # 添加数据验证
-                        st.write("**📊 数据验证：**")
-                        all_checks_pass = True
-                        for idx, row in results_df_simplified.iterrows():
-                            casi_detected = row['CASI分类后检出数']
-                            overdetect = row['过检(0)']
-                            correct = row['正确检出(1,3,4,5)']
-                            miss = row['漏检总数']
-                            kla_total = row['KLA总数']
+                        # # 添加数据验证
+                        # st.write("**📊 数据验证：**")
+                        # all_checks_pass = True
+                        # for idx, row in results_df_simplified.iterrows():
+                        #     casi_detected = row['CASI分类后检出数']
+                        #     overdetect = row['过检(0)']
+                        #     correct = row['正确检出(1,3,4,5)']
+                        #     miss = row['漏检总数']
+                        #     kla_total = row['KLA总数']
                             
-                            # 验证1：正确检出 = CASI分类后检出数 - 过检
-                            expected_correct = casi_detected - overdetect
-                            check1_pass = abs(expected_correct - correct) < 0.01
+                        #     # 验证1：正确检出 = CASI分类后检出数 - 过检
+                        #     expected_correct = casi_detected - overdetect
+                        #     check1_pass = abs(expected_correct - correct) < 0.01
                             
-                            # 验证2：正确检出 + 漏检 = KLA总数
-                            sum_check = correct + miss
-                            check2_pass = abs(sum_check - kla_total) < 0.01
+                        #     # 验证2：正确检出 + 漏检 = KLA总数
+                        #     sum_check = correct + miss
+                        #     check2_pass = abs(sum_check - kla_total) < 0.01
                             
-                            status1 = "✅" if check1_pass else "❌"
-                            status2 = "✅" if check2_pass else "❌"
+                        #     status1 = "✅" if check1_pass else "❌"
+                        #     status2 = "✅" if check2_pass else "❌"
                             
-                            if not (check1_pass and check2_pass):
-                                all_checks_pass = False
+                        #     if not (check1_pass and check2_pass):
+                        #         all_checks_pass = False
                             
-                            st.write(f"{row['CASI文件夹']} vs {row['KLA文件夹']}: "
-                                   f"{status1} 正检={casi_detected}-{overdetect}={expected_correct}(实际:{correct}) | "
-                                   f"{status2} 正检({correct})+漏检({miss})={sum_check}(KLA:{kla_total})")
+                        #     st.write(f"{row['CASI文件夹']} vs {row['KLA文件夹']}: "
+                        #            f"{status1} 正检={casi_detected}-{overdetect}={expected_correct}(实际:{correct}) | "
+                        #            f"{status2} 正检({correct})+漏检({miss})={sum_check}(KLA:{kla_total})")
                         
-                        if all_checks_pass:
-                            st.success("✅ 所有数据验证通过！")
-                        else:
-                            st.error("❌ 部分数据验证失败，请检查！")
+                        # if all_checks_pass:
+                        #     st.success("✅ 所有数据验证通过！")
+                        # else:
+                        #     st.error("❌ 部分数据验证失败，请检查！")
                         
                         # 提供简化版下载
                         csv_simplified = results_df_simplified.to_csv(index=False, encoding='utf-8-sig')
@@ -2883,7 +5721,8 @@ with tab1:
                             label="📥 下载简化版匹配结果（CSV）",
                             data=csv_simplified,
                             file_name=f"kla_match_results_simplified_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
+                            mime="text/csv",
+                            key="download_method1_simplified_csv"
                         )
                         
                         # 可视化分析
@@ -2925,12 +5764,12 @@ with tab1:
                         st.plotly_chart(fig_stack, use_container_width=True)
                         
                         # 新增：过漏检缺陷分布图
-                        st.write("### 🗺️ 过漏检缺陷分布图")
+                        st.write("### 🗺️ 过漏检缺陷分布map图")
                         st.markdown("""
                         晶圆图显示缺陷的分类情况：
                         - 🟢 **绿色**：正确检出的缺陷
-                        - 🔴 **红色**：漏检的缺陷
-                        - 🟡 **黄色**：过检的缺陷
+                        - 🔵 **蓝色**：漏检的缺陷
+                        - 🔴 **红色**：过检的缺陷
                         """)
                         
                         # 网格显示选项
@@ -3129,450 +5968,63 @@ with tab1:
                                     st.metric("过检", len(coord_data.get('过检', [])))
                         
                         # 统计摘要
-                        st.write("### 📋 统计摘要")
+                        # st.write("### 📋 统计摘要")
                         
-                        col1, col2, col3, col4, col5 = st.columns(5)
-                        with col1:
-                            total_overdetect = results_df['过检(0)'].sum()
-                            st.metric("总过检数", total_overdetect)
-                        with col2:
-                            total_overdetect_clean = results_df['过检（去除污染）'].sum()
-                            st.metric("总过检数（去污染）", total_overdetect_clean)
-                        with col3:
-                            total_correct = results_df['正确检出(1,3,4,5)'].sum()
-                            st.metric("总正确检出", total_correct)
-                        with col4:
-                            total_miss_total = results_df['漏检总数'].sum()
-                            st.metric("漏检总数", total_miss_total)
-                        with col5:
-                            avg_detect_rate = results_df['正确检出(1,3,4,5)'].sum() / results_df['CASI总数'].sum() * 100 if results_df['CASI总数'].sum() > 0 else 0
-                            st.metric("平均检出率", f"{avg_detect_rate:.2f}%")
+                        # col1, col2, col3, col4, col5 = st.columns(5)
+                        # with col1:
+                        #     total_overdetect = results_df['过检(0)'].sum()
+                        #     st.metric("总过检数", total_overdetect)
+                        # with col2:
+                        #     total_overdetect_clean = results_df['过检（去除污染）'].sum()
+                        #     st.metric("总过检数（去污染）", total_overdetect_clean)
+                        # with col3:
+                        #     total_correct = results_df['正确检出(1,3,4,5)'].sum()
+                        #     st.metric("总正确检出", total_correct)
+                        # with col4:
+                        #     total_miss_total = results_df['漏检总数'].sum()
+                        #     st.metric("漏检总数", total_miss_total)
+                        # with col5:
+                        #     avg_detect_rate = results_df['正确检出(1,3,4,5)'].sum() / results_df['CASI总数'].sum() * 100 if results_df['CASI总数'].sum() > 0 else 0
+                        #     st.metric("平均检出率", f"{avg_detect_rate:.2f}%")
                         
                         # 添加去除污染后的对比图
-                        st.write("### 📊 去除污染后的匹配结果对比")
-                        fig_stack_clean = go.Figure()
+                        # st.write("### 📊 去除污染后的匹配结果对比")
+                        # fig_stack_clean = go.Figure()
                         
-                        fig_stack_clean.add_trace(go.Bar(
-                            name='过检（去污染）',
-                            x=results_df['组合'],
-                            y=results_df['过检（去除污染）'],
-                            marker_color='#FF6B6B'
-                        ))
-                        fig_stack_clean.add_trace(go.Bar(
-                            name='正确检出',
-                            x=results_df['组合'],
-                            y=results_df['正确检出(1,3,4,5)'],
-                            marker_color='#4ECDC4'
-                        ))
-                        fig_stack_clean.add_trace(go.Bar(
-                            name='漏检',
-                            x=results_df['组合'],
-                            y=results_df['漏检总数'],
-                            marker_color='#FFE66D'
-                        ))
+                        # fig_stack_clean.add_trace(go.Bar(
+                        #     name='过检（去污染）',
+                        #     x=results_df['组合'],
+                        #     y=results_df['过检（去除污染）'],
+                        #     marker_color='#FF6B6B'
+                        # ))
+                        # fig_stack_clean.add_trace(go.Bar(
+                        #     name='正确检出',
+                        #     x=results_df['组合'],
+                        #     y=results_df['正确检出(1,3,4,5)'],
+                        #     marker_color='#4ECDC4'
+                        # ))
+                        # fig_stack_clean.add_trace(go.Bar(
+                        #     name='漏检',
+                        #     x=results_df['组合'],
+                        #     y=results_df['漏检总数'],
+                        #     marker_color='#FFE66D'
+                        # ))
                         
-                        fig_stack_clean.update_layout(
-                            title='KLA匹配结果对比（去除污染后）',
-                            barmode='stack',
-                            xaxis_title='CASI vs KLA',
-                            yaxis_title='缺陷数量',
-                            height=500,
-                            showlegend=True
-                        )
+                        # fig_stack_clean.update_layout(
+                        #     title='KLA匹配结果对比（去除污染后）',
+                        #     barmode='stack',
+                        #     xaxis_title='CASI vs KLA',
+                        #     yaxis_title='缺陷数量',
+                        #     height=500,
+                        #     showlegend=True
+                        # )
                         
-                        st.plotly_chart(fig_stack_clean, use_container_width=True)
-                        
-                        # 新增：DSIZE尺寸检出率分析
-                        st.write("---")
-                        st.markdown('<a name="DSIZE尺寸分析"></a>', unsafe_allow_html=True)
-                        st.subheader("📏 DSIZE尺寸检出率分析")
-                        
-                        with st.expander("📏 查看DSIZE尺寸分析详情", expanded=False):
-                            st.markdown("""
-                            分析正确检出和漏检缺陷的DSIZE尺寸分布，帮助了解不同尺寸缺陷的检出情况。
-                            """)
-                        
-                        # 转换DSIZE列为数值类型
-                        for col in ['正确检出DSIZE均值', '正确检出DSIZE最小', '正确检出DSIZE最大', 
-                                   '漏检DSIZE均值', '漏检DSIZE最小', '漏检DSIZE最大']:
-                            if col in results_df.columns:
-                                results_df[col] = pd.to_numeric(results_df[col], errors='coerce')
-                        
-                        # DSIZE均值对比图
-                        st.write("### 📊 正确检出 vs 漏检的DSIZE均值对比")
-                        fig_dsize_avg = go.Figure()
-                        
-                        fig_dsize_avg.add_trace(go.Bar(
-                            name='正确检出DSIZE均值',
-                            x=results_df['组合'],
-                            y=results_df['正确检出DSIZE均值'],
-                            marker_color='#4ECDC4',
-                            text=results_df['正确检出DSIZE均值'].apply(lambda x: f"{x:.4f}" if pd.notna(x) else "N/A"),
-                            textposition='auto',
-                        ))
-                        
-                        fig_dsize_avg.add_trace(go.Bar(
-                            name='漏检DSIZE均值',
-                            x=results_df['组合'],
-                            y=results_df['漏检DSIZE均值'],
-                            marker_color='#FFE66D',
-                            text=results_df['漏检DSIZE均值'].apply(lambda x: f"{x:.4f}" if pd.notna(x) else "N/A"),
-                            textposition='auto',
-                        ))
-                        
-                        fig_dsize_avg.update_layout(
-                            title='正确检出 vs 漏检的DSIZE均值对比',
-                            xaxis_title='CASI vs KLA',
-                            yaxis_title='DSIZE均值',
-                            barmode='group',
-                            height=500,
-                            showlegend=True
-                        )
-                        
-                        st.plotly_chart(fig_dsize_avg, use_container_width=True)
-                        
-                        # DSIZE范围对比图
-                        st.write("### 📊 DSIZE尺寸范围对比")
-                        
-                        fig_dsize_range = go.Figure()
-                        
-                        # 正确检出的DSIZE范围
-                        fig_dsize_range.add_trace(go.Scatter(
-                            x=results_df['组合'],
-                            y=results_df['正确检出DSIZE最大'],
-                            mode='lines+markers',
-                            name='正确检出最大值',
-                            line=dict(color='#4ECDC4', width=2),
-                            marker=dict(size=8)
-                        ))
-                        
-                        fig_dsize_range.add_trace(go.Scatter(
-                            x=results_df['组合'],
-                            y=results_df['正确检出DSIZE均值'],
-                            mode='lines+markers',
-                            name='正确检出均值',
-                            line=dict(color='#45B7D1', width=2, dash='dash'),
-                            marker=dict(size=8)
-                        ))
-                        
-                        fig_dsize_range.add_trace(go.Scatter(
-                            x=results_df['组合'],
-                            y=results_df['正确检出DSIZE最小'],
-                            mode='lines+markers',
-                            name='正确检出最小值',
-                            line=dict(color='#A2D9CE', width=2),
-                            marker=dict(size=8)
-                        ))
-                        
-                        # 漏检的DSIZE范围
-                        fig_dsize_range.add_trace(go.Scatter(
-                            x=results_df['组合'],
-                            y=results_df['漏检DSIZE最大'],
-                            mode='lines+markers',
-                            name='漏检最大值',
-                            line=dict(color='#FFE66D', width=2),
-                            marker=dict(size=8)
-                        ))
-                        
-                        fig_dsize_range.add_trace(go.Scatter(
-                            x=results_df['组合'],
-                            y=results_df['漏检DSIZE均值'],
-                            mode='lines+markers',
-                            name='漏检均值',
-                            line=dict(color='#FFA07A', width=2, dash='dash'),
-                            marker=dict(size=8)
-                        ))
-                        
-                        fig_dsize_range.add_trace(go.Scatter(
-                            x=results_df['组合'],
-                            y=results_df['漏检DSIZE最小'],
-                            mode='lines+markers',
-                            name='漏检最小值',
-                            line=dict(color='#FF6B6B', width=2),
-                            marker=dict(size=8)
-                        ))
-                        
-                        fig_dsize_range.update_layout(
-                            title='DSIZE尺寸范围对比（正确检出 vs 漏检）',
-                            xaxis_title='CASI vs KLA',
-                            yaxis_title='DSIZE值',
-                            height=600,
-                            hovermode='x unified',
-                            showlegend=True,
-                            legend=dict(
-                                orientation="v",
-                                yanchor="top",
-                                y=1,
-                                xanchor="left",
-                                x=1.02
-                            )
-                        )
-                        
-                        st.plotly_chart(fig_dsize_range, use_container_width=True)
-                        
-                        # DSIZE统计摘要表
-                        st.write("### 📋 DSIZE统计摘要")
-                        
-                        summary_dsize = pd.DataFrame({
-                            'CASI-KLA组合': results_df['组合'],
-                            '正确检出数': results_df['正确检出(1,3,4,5)'],
-                            '正确检出DSIZE均值': results_df['正确检出DSIZE均值'].apply(lambda x: f"{x:.6f}" if pd.notna(x) and x > 0 else "N/A"),
-                            '正确检出DSIZE范围': results_df.apply(lambda row: f"{row['正确检出DSIZE最小']:.6f} - {row['正确检出DSIZE最大']:.6f}" 
-                                                            if pd.notna(row['正确检出DSIZE最小']) and row['正确检出DSIZE最小'] > 0 else "N/A", axis=1),
-                            '漏检数': results_df['漏检总数'],
-                            '漏检DSIZE均值': results_df['漏检DSIZE均值'].apply(lambda x: f"{x:.6f}" if pd.notna(x) and x > 0 else "N/A"),
-                            '漏检DSIZE范围': results_df.apply(lambda row: f"{row['漏检DSIZE最小']:.6f} - {row['漏检DSIZE最大']:.6f}" 
-                                                        if pd.notna(row['漏检DSIZE最小']) and row['漏检DSIZE最小'] > 0 else "N/A", axis=1)
-                        })
-                        
-                        st.dataframe(summary_dsize, use_container_width=True)
-                        
-                        # 新增：过检数据的DW1O_Size和DW2O_Size尺寸分布分析
-                        st.write("---")
-                        st.markdown('<a name="过检尺寸分布"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 过检数据尺寸分布分析（DW1O_Size & DW2O_Size）")
-                        
-                        with st.expander("📐 查看过检尺寸分布详情", expanded=False):
-                            st.markdown("""
-                            分析过检数据的DW1O_Size和DW2O_Size尺寸分布，帮助了解过检缺陷的尺寸特征。
-                            - **DW1O_Size**：过检缺陷在DW1O通道的尺寸测量值（单位：nm，无需转换）
-                            - **DW2O_Size**：过检缺陷在DW2O通道的尺寸测量值（单位：nm，无需转换）
-                            - 仅统计CASI过检数据，不涉及KLA数据对比
-                            """)
-                        
-                        # 检查是否有过检尺寸数据
-                        has_overdetect_size_data = any(
-                            result.get('overdetect_size_stats', {}).get('has_size_data', False) 
-                            for result in all_match_results
-                        )
-                        
-                        if has_overdetect_size_data:
-                            # 创建过检尺寸统计表
-                            overdetect_size_summary = []
-                            for result in all_match_results:
-                                casi_name = result['CASI文件夹']
-                                kla_name = result['KLA文件夹']
-                                n_overdetect = result['过检(0)']
-                                overdetect_stats = result.get('overdetect_size_stats', {})
-                                
-                                if overdetect_stats.get('has_size_data', False):
-                                    dw1o = overdetect_stats.get('dw1o_size', {})
-                                    dw2o = overdetect_stats.get('dw2o_size', {})
-                                    
-                                    row = {
-                                        'CASI-KLA组合': f"{casi_name} vs {kla_name}",
-                                        '过检数量': n_overdetect,
-                                        'DW1O_Size样本数': len(dw1o.get('values', [])),
-                                        'DW1O_Size为200000数量': dw1o.get('count_200000', 0),
-                                        'DW1O_Size均值': f"{dw1o.get('mean', 0):.2f}" if dw1o.get('mean', 0) > 0 else "N/A",
-                                        'DW1O_Size最小': f"{dw1o.get('min', 0):.2f}" if dw1o.get('min', 0) > 0 else "N/A",
-                                        'DW1O_Size最大': f"{dw1o.get('max', 0):.2f}" if dw1o.get('max', 0) > 0 else "N/A",
-                                        'DW1O_Size标准差': f"{dw1o.get('std', 0):.2f}" if dw1o.get('std', 0) > 0 else "N/A",
-                                        'DW2O_Size样本数': len(dw2o.get('values', [])),
-                                        'DW2O_Size为200000数量': dw2o.get('count_200000', 0),
-                                        'DW2O_Size均值': f"{dw2o.get('mean', 0):.2f}" if dw2o.get('mean', 0) > 0 else "N/A",
-                                        'DW2O_Size最小': f"{dw2o.get('min', 0):.2f}" if dw2o.get('min', 0) > 0 else "N/A",
-                                        'DW2O_Size最大': f"{dw2o.get('max', 0):.2f}" if dw2o.get('max', 0) > 0 else "N/A",
-                                        'DW2O_Size标准差': f"{dw2o.get('std', 0):.2f}" if dw2o.get('std', 0) > 0 else "N/A"
-                                    }
-                                    overdetect_size_summary.append(row)
-                            
-                            if overdetect_size_summary:
-                                st.write("### 📋 过检尺寸统计摘要")
-                                overdetect_size_df = pd.DataFrame(overdetect_size_summary)
-                                st.dataframe(overdetect_size_df, use_container_width=True)
-                                
-                                # 提供CSV下载
-                                csv_overdetect_size = overdetect_size_df.to_csv(index=False, encoding='utf-8-sig')
-                                st.download_button(
-                                    label="📥 下载过检尺寸统计（CSV）",
-                                    data=csv_overdetect_size,
-                                    file_name=f"overdetect_size_stats_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
-                                )
-                                
-                                # DW1O_Size和DW2O_Size分布箱线图对比
-                                st.write("### 📊 过检尺寸分布箱线图（CASI数据）")
-                                
-                                st.info("以下图表展示的是CASI过检数据的DW1O_Size和DW2O_Size尺寸分布，单位为nm，无需转换。")
-                                
-                                # 为每个CASI-KLA组合创建箱线图
-                                for result in all_match_results:
-                                    casi_name = result['CASI文件夹']
-                                    kla_name = result['KLA文件夹']
-                                    overdetect_stats = result.get('overdetect_size_stats', {})
-                                    
-                                    if not overdetect_stats.get('has_size_data', False):
-                                        continue
-                                    
-                                    dw1o_values = overdetect_stats.get('dw1o_size', {}).get('values', [])
-                                    dw2o_values = overdetect_stats.get('dw2o_size', {}).get('values', [])
-                                    
-                                    if len(dw1o_values) > 0 or len(dw2o_values) > 0:
-                                        st.write(f"#### {casi_name} vs {kla_name}")
-                                        
-                                        fig_box = go.Figure()
-                                        
-                                        if len(dw1o_values) > 0:
-                                            fig_box.add_trace(go.Box(
-                                                y=dw1o_values,
-                                                name='DW1O_Size (nm)',
-                                                marker_color='#4ECDC4',
-                                                boxmean='sd'  # 显示均值和标准差
-                                            ))
-                                        
-                                        if len(dw2o_values) > 0:
-                                            fig_box.add_trace(go.Box(
-                                                y=dw2o_values,
-                                                name='DW2O_Size (nm)',
-                                                marker_color='#FF6B6B',
-                                                boxmean='sd'
-                                            ))
-                                        
-                                        fig_box.update_layout(
-                                            title=f'CASI过检数据尺寸分布 - {casi_name} vs {kla_name}',
-                                            yaxis_title='尺寸值 (nm)',
-                                            height=500,
-                                            showlegend=True
-                                        )
-                                        
-                                        st.plotly_chart(fig_box, use_container_width=True)
-                                        
-                                        # 显示统计信息
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            dw1o_stats = overdetect_stats.get('dw1o_size', {})
-                                            if len(dw1o_values) > 0:
-                                                st.write("**DW1O_Size统计：**")
-                                                st.write(f"- 样本数（排除200000）: {len(dw1o_values)}")
-                                                st.write(f"- 200000数量: {dw1o_stats.get('count_200000', 0)}")
-                                                st.write(f"- 均值: {np.mean(dw1o_values):.2f}")
-                                                st.write(f"- 中位数: {np.median(dw1o_values):.2f}")
-                                                st.write(f"- 标准差: {np.std(dw1o_values):.2f}")
-                                                st.write(f"- 范围: {np.min(dw1o_values):.2f} - {np.max(dw1o_values):.2f}")
-                                        
-                                        with col2:
-                                            dw2o_stats = overdetect_stats.get('dw2o_size', {})
-                                            if len(dw2o_values) > 0:
-                                                st.write("**DW2O_Size统计：**")
-                                                st.write(f"- 样本数（排除200000）: {len(dw2o_values)}")
-                                                st.write(f"- 200000数量: {dw2o_stats.get('count_200000', 0)}")
-                                                st.write(f"- 均值: {np.mean(dw2o_values):.2f}")
-                                                st.write(f"- 中位数: {np.median(dw2o_values):.2f}")
-                                                st.write(f"- 标准差: {np.std(dw2o_values):.2f}")
-                                                st.write(f"- 范围: {np.min(dw2o_values):.2f} - {np.max(dw2o_values):.2f}")
-                                        
-                                        # 直方图分布
-                                        st.write("**尺寸分布直方图：**")
-                                        
-                                        fig_hist = go.Figure()
-                                        
-                                        if len(dw1o_values) > 0:
-                                            fig_hist.add_trace(go.Histogram(
-                                                x=dw1o_values,
-                                                name='DW1o_size (nm)',
-                                                marker_color='#4ECDC4',
-                                                opacity=0.7,
-                                                nbinsx=30
-                                            ))
-                                        
-                                        if len(dw2o_values) > 0:
-                                            fig_hist.add_trace(go.Histogram(
-                                                x=dw2o_values,
-                                                name='DW2O_Size (nm)',
-                                                marker_color='#FF6B6B',
-                                                opacity=0.7,
-                                                nbinsx=30
-                                            ))
-                                        
-                                        fig_hist.update_layout(
-                                            title=f'CASI过检尺寸分布直方图 - {casi_name} vs {kla_name}',
-                                            xaxis_title='尺寸值 (nm)',
-                                            yaxis_title='频数',
-                                            barmode='overlay',
-                                            height=400,
-                                            showlegend=True
-                                        )
-                                        
-                                        st.plotly_chart(fig_hist, use_container_width=True)
-                                        
-                                        st.write("---")
-                                
-                                # 总体对比（所有组合）
-                                st.write("### 📊 总体过检尺寸分布对比（CASI数据）")
-                                
-                                # 收集所有DW1O和DW2O数据，同时统计200000的数量
-                                all_dw1o_values = []
-                                all_dw2o_values = []
-                                total_dw1o_count_200000 = 0
-                                total_dw2o_count_200000 = 0
-                                
-                                for result in all_match_results:
-                                    overdetect_stats = result.get('overdetect_size_stats', {})
-                                    if overdetect_stats.get('has_size_data', False):
-                                        all_dw1o_values.extend(overdetect_stats.get('dw1o_size', {}).get('values', []))
-                                        all_dw2o_values.extend(overdetect_stats.get('dw2o_size', {}).get('values', []))
-                                        total_dw1o_count_200000 += overdetect_stats.get('dw1o_size', {}).get('count_200000', 0)
-                                        total_dw2o_count_200000 += overdetect_stats.get('dw2o_size', {}).get('count_200000', 0)
-
-                                if len(all_dw1o_values) > 0 or len(all_dw2o_values) > 0:
-                                    st.info("📊 该图表汇总所有组合的CASI过检数据，尺寸单位为nm，无需转换。已排除200000的数据。")
-                                    
-                                    fig_overall = go.Figure()
-                                    
-                                    if len(all_dw1o_values) > 0:
-                                        fig_overall.add_trace(go.Box(
-                                            y=all_dw1o_values,
-                                            name=f'DW1O_Size (nm) (n={len(all_dw1o_values)})',
-                                            marker_color='#4ECDC4',
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    if len(all_dw2o_values) > 0:
-                                        fig_overall.add_trace(go.Box(
-                                            y=all_dw2o_values,
-                                            name=f'DW2O_Size (nm) (n={len(all_dw2o_values)})',
-                                            marker_color='#FF6B6B',
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    fig_overall.update_layout(
-                                        title='CASI过检数据总体尺寸分布对比',
-                                        yaxis_title='尺寸值 (nm)',
-                                        height=500,
-                                        showlegend=True
-                                    )
-                                    
-                                    st.plotly_chart(fig_overall, use_container_width=True)
-                                    
-                                    # 总体统计摘要
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        if len(all_dw1o_values) > 0:
-                                            st.write("**DW1O_Size总体统计 (nm)：**")
-                                            st.metric("总样本数（排除200000）", len(all_dw1o_values))
-                                            st.metric("200000数量", total_dw1o_count_200000)
-                                            st.metric("均值 (nm)", f"{np.mean(all_dw1o_values):.2f}")
-                                            st.metric("中位数 (nm)", f"{np.median(all_dw1o_values):.2f}")
-                                            st.metric("标准差 (nm)", f"{np.std(all_dw1o_values):.2f}")
-                                    
-                                    with col2:
-                                        if len(all_dw2o_values) > 0:
-                                            st.write("**DW2O_Size总体统计 (nm)：**")
-                                            st.metric("总样本数（排除200000）", len(all_dw2o_values))
-                                            st.metric("200000数量", total_dw2o_count_200000)
-                                            st.metric("均值 (nm)", f"{np.mean(all_dw2o_values):.2f}")
-                                            st.metric("中位数 (nm)", f"{np.median(all_dw2o_values):.2f}")
-                                            st.metric("标准差 (nm)", f"{np.std(all_dw2o_values):.2f}")
-                            else:
-                                st.info("所有组合均无过检尺寸数据")
-                        else:
-                            st.info("BlobFeatures文件中未找到DW1O_Size或DW2O_Size列，无法进行过检尺寸分布分析")
+                        # st.plotly_chart(fig_stack_clean, use_container_width=True)
                         
                         # 新增：按尺寸区间的详细检出统计（26nm-100nm）
                         st.write("---")
                         st.markdown('<a name="按尺寸区间统计"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 按尺寸区间的详细检出统计（26nm-100nm，DSIZE×1000）")
+                        st.subheader("📊 尺寸检出率统计（26nm-100nm）")
                         
                         with st.expander("📊 查看按尺寸区间统计详情", expanded=False):
                             st.markdown("""
@@ -3673,1621 +6125,19 @@ with tab1:
                                     textposition='inside'
                                 ))
                                 
-                                fig_stack_size.update_layout(
-                                    title=f'{casi_name} vs {kla_name} - 各尺寸区间缺陷分布',
-                                    xaxis_title='尺寸区间',
-                                    yaxis_title='缺陷数量',
-                                    barmode='stack',
-                                    height=500,
-                                    showlegend=True
-                                )
+                                # fig_stack_size.update_layout(
+                                #     title=f'{casi_name} vs {kla_name} - 各尺寸区间缺陷分布',
+                                #     xaxis_title='尺寸区间',
+                                #     yaxis_title='缺陷数量',
+                                #     barmode='stack',
+                                #     height=500,
+                                #     showlegend=True
+                                # )
                                 
-                                st.plotly_chart(fig_stack_size, use_container_width=True)
+                                # st.plotly_chart(fig_stack_size, use_container_width=True)
                             else:
                                 st.info(f"{casi_name} vs {kla_name}: 26nm-100nm范围内无数据")
-                            
-                            st.write("---")
-                        
-                        # 新增：DSIZE与DW1O_Size对比分析（仅针对正确检出的缺陷）
-                        st.write("---")
-                        st.subheader("📏 DSIZE与DW1O_Size对比分析（正确检出缺陷）")
-                        
-                        st.markdown("""
-                        对所有匹配后判断为正确检出的缺陷，对比KLA文件中的DSIZE与各子文件夹的DW1O_Size。
-                        - DSIZE需要乘以1000进行单位转换
-                        - 仅分析匹配结果为1、3、4、5（正确检出）的缺陷
-                        """)
-                        
-                        with st.spinner("正在分析DSIZE和DW1O_Size..."):
-                            size_comparison_data = []
-                            
-                            # 对每个CASI文件夹重新读取数据并提取正确检出的缺陷
-                            for casi_folder in sorted(casi_folders):
-                                casi_csv_path = os.path.join(kla_match_folder, casi_folder, 'jianchu.csv')
-                                
-                                if not os.path.exists(casi_csv_path):
-                                    continue
-                                
-                                # 读取CASI数据
-                                casi_df = pd.read_csv(casi_csv_path)
-                                casi_df.columns = casi_df.columns.str.strip()
-                                
-                                # 获取CASI坐标列
-                                cas_x_col = None
-                                cas_y_col = None
-                                for x_candidate in ['dCenterXCartisian', 'dCenterXCartesian', 'XREL', 'cx']:
-                                    if x_candidate in casi_df.columns:
-                                        cas_x_col = x_candidate
-                                        break
-                                for y_candidate in ['dCenterYCartisian', 'dCenterYCartesian', 'YREL', 'cy']:
-                                    if y_candidate in casi_df.columns:
-                                        cas_y_col = y_candidate
-                                        break
-                                
-                                # 检查DW1O_Size列是否存在
-                                if 'DW1O_Size' not in casi_df.columns:
-                                    st.warning(f"{casi_folder}: 缺少DW1O_Size列")
-                                    continue
-                                
-                                if cas_x_col is None or cas_y_col is None:
-                                    continue
-                                
-                                # 对每个KLA文件夹进行匹配
-                                for kla_folder in sorted(kla_folders):
-                                    kla_csv_path = os.path.join(kla_match_folder, kla_folder, 'jianchu.csv')
-                                    
-                                    if not os.path.exists(kla_csv_path):
-                                        continue
-                                    
-                                    # 读取KLA数据（保持完整精度，特别是DSIZE列）
-                                    kla_df = pd.read_csv(kla_csv_path, dtype={'DSIZE': float}, float_precision='high')
-                                    kla_df.columns = kla_df.columns.str.strip()
-                                    
-                                    # 检查KLA必需的列
-                                    if not {'XREL', 'YREL', 'DSIZE'}.issubset(kla_df.columns):
-                                        st.warning(f"{kla_folder}: 缺少XREL/YREL/DSIZE列")
-                                        continue
-                                    
-                                    # 准备数据
-                                    casi_work = casi_df[[cas_x_col, cas_y_col, 'DW1O_Size']].copy()
-                                    casi_work.columns = ['XREL', 'YREL', 'DW1O_Size']
-                                    casi_work['XREL'] = pd.to_numeric(casi_work['XREL'], errors='coerce')
-                                    casi_work['YREL'] = pd.to_numeric(casi_work['YREL'], errors='coerce')
-                                    casi_work['DW1O_Size'] = pd.to_numeric(casi_work['DW1O_Size'], errors='coerce')
-                                    casi_work = casi_work.dropna(subset=['XREL', 'YREL']).reset_index(drop=True)
-                                    
-                                    kla_work = kla_df[['XREL', 'YREL', 'DSIZE']].copy()
-                                    kla_work['XREL'] = pd.to_numeric(kla_work['XREL'], errors='coerce')
-                                    kla_work['YREL'] = pd.to_numeric(kla_work['YREL'], errors='coerce')
-                                    kla_work['DSIZE'] = pd.to_numeric(kla_work['DSIZE'], errors='coerce', downcast=None)
-                                    kla_work = kla_work.dropna(subset=['XREL', 'YREL']).reset_index(drop=True)
-                                    
-                                    # 构建KDTree并执行匹配
-                                    if len(casi_work) > 0 and len(kla_work) > 0:
-                                        casi_pts = casi_work[['XREL', 'YREL']].to_numpy()
-                                        kla_pts = kla_work[['XREL', 'YREL']].to_numpy()
-                                        
-                                        tree_casi = KDTree(casi_pts)
-                                        tree_kla = KDTree(kla_pts)
-                                        
-                                        # 初始化匹配结果
-                                        casi_match_result = np.full(len(casi_work), np.nan)
-                                        casi_matched_kla_idx = np.full(len(casi_work), -1, dtype=int)
-                                        
-                                        # KLA -> CASI 匹配
-                                        for kla_idx in range(len(kla_pts)):
-                                            kla_pt = kla_pts[kla_idx]
-                                            casi_idx_list = tree_casi.query_ball_point(kla_pt, r=kla_match_threshold)
-                                            
-                                            if len(casi_idx_list) == 1:
-                                                casi_match_result[casi_idx_list[0]] = 1
-                                                casi_matched_kla_idx[casi_idx_list[0]] = kla_idx
-                                            elif len(casi_idx_list) > 1:
-                                                casi_match_result[casi_idx_list[0]] = 3
-                                                casi_matched_kla_idx[casi_idx_list[0]] = kla_idx
-                                                for ci in casi_idx_list[1:]:
-                                                    if np.isnan(casi_match_result[ci]):
-                                                        casi_match_result[ci] = 0
-                                        
-                                        # CASI -> KLA 匹配（细化）
-                                        for casi_idx in range(len(casi_pts)):
-                                            casi_pt = casi_pts[casi_idx]
-                                            kla_idx_list = tree_kla.query_ball_point(casi_pt, r=kla_match_threshold)
-                                            
-                                            if len(kla_idx_list) == 0:
-                                                if np.isnan(casi_match_result[casi_idx]):
-                                                    casi_match_result[casi_idx] = 0
-                                            elif len(kla_idx_list) > 1:
-                                                if casi_match_result[casi_idx] == 1:
-                                                    casi_match_result[casi_idx] = 4
-                                                    if casi_matched_kla_idx[casi_idx] == -1:
-                                                        casi_matched_kla_idx[casi_idx] = kla_idx_list[0]
-                                                elif casi_match_result[casi_idx] == 3:
-                                                    casi_match_result[casi_idx] = 5
-                                            elif len(kla_idx_list) == 1:
-                                                if casi_matched_kla_idx[casi_idx] == -1:
-                                                    casi_matched_kla_idx[casi_idx] = kla_idx_list[0]
-                                        
-                                        # 提取正确检出的缺陷（匹配结果为1、3、4、5）
-                                        correct_detect_mask = np.isin(casi_match_result, [1, 3, 4, 5])
-                                        
-                                        for casi_idx in np.where(correct_detect_mask)[0]:
-                                            kla_idx = casi_matched_kla_idx[casi_idx]
-                                            
-                                            if kla_idx >= 0 and kla_idx < len(kla_work):
-                                                casi_dw1o_size = casi_work.loc[casi_idx, 'DW1O_Size']
-                                                kla_dsize = kla_work.loc[kla_idx, 'DSIZE']
-                                                
-                                                # 过滤条件：排除DW1O_Size为200000.00的缺陷，且两个值都有效
-                                                if pd.notna(casi_dw1o_size) and pd.notna(kla_dsize) and casi_dw1o_size != 200000.00:
-                                                    kla_dsize_converted = kla_dsize * 1000  # DSIZE乘以1000
-                                                    
-                                                    size_comparison_data.append({
-                                                        'CASI文件夹': casi_folder,
-                                                        'KLA文件夹': kla_folder,
-                                                        'X坐标': casi_work.loc[casi_idx, 'XREL'],
-                                                        'Y坐标': casi_work.loc[casi_idx, 'YREL'],
-                                                        'KLA_DSIZE': kla_dsize,
-                                                        'KLA_DSIZE_x1000': kla_dsize_converted,
-                                                        'CASI_DW1O_Size': casi_dw1o_size,
-                                                        'Size差异': casi_dw1o_size - kla_dsize_converted,
-                                                        'Size差异率(%)': ((casi_dw1o_size - kla_dsize_converted) / kla_dsize_converted * 100) if kla_dsize_converted != 0 else np.nan
-                                                    })
-                            
-                            # 显示对比结果
-                            if size_comparison_data:
-                                size_comp_df = pd.DataFrame(size_comparison_data)
-                                
-                                st.success(f"找到 {len(size_comp_df)} 个正确检出的缺陷具有完整的尺寸数据")
-                                
-                                # 显示对比表格（DSIZE显示更多小数位）
-                                st.write("### 📊 DSIZE与DW1O_Size对比表格")
-                                
-                                # 创建格式化的显示DataFrame
-                                display_df = size_comp_df.copy()
-                                display_df['KLA_DSIZE'] = display_df['KLA_DSIZE'].apply(lambda x: f"{x:.6f}")  # 显示6位小数
-                                display_df['KLA_DSIZE_x1000'] = display_df['KLA_DSIZE_x1000'].apply(lambda x: f"{x:.3f}")  # 显示3位小数
-                                display_df['CASI_DW1O_Size'] = display_df['CASI_DW1O_Size'].apply(lambda x: f"{x:.2f}")
-                                display_df['Size差异'] = display_df['Size差异'].apply(lambda x: f"{x:.2f}")
-                                display_df['Size差异率(%)'] = display_df['Size差异率(%)'].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
-                                display_df['X坐标'] = display_df['X坐标'].apply(lambda x: f"{x:.2f}")
-                                display_df['Y坐标'] = display_df['Y坐标'].apply(lambda x: f"{x:.2f}")
-                                
-                                st.dataframe(display_df, use_container_width=True, height=400)
-                                
-                                # 提供CSV下载（保持完整精度）
-                                csv_size = size_comp_df.to_csv(index=False, encoding='utf-8-sig', float_format='%.6f')
-                                st.download_button(
-                                    label="📥 下载尺寸对比数据（CSV）",
-                                    data=csv_size,
-                                    file_name=f"size_comparison_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
-                                )
-                                
-                                # 对比趋势图（纵坐标为KLA的DSIZE×1000）
-                                st.write("### 📈 尺寸对比趋势图")
-                                
-                                # 为每个CASI-KLA组合创建散点图
-                                casi_kla_pairs = size_comp_df.groupby(['CASI文件夹', 'KLA文件夹'])
-                                
-                                for (casi_name, kla_name), group_df in casi_kla_pairs:
-                                    st.write(f"#### {casi_name} vs {kla_name}")
-                                    
-                                    # 创建散点图：X轴为缺陷索引或序号，Y轴为尺寸值
-                                    fig_trend = go.Figure()
-                                    
-                                    # 添加KLA DSIZE×1000的趋势线
-                                    fig_trend.add_trace(go.Scatter(
-                                        x=list(range(len(group_df))),
-                                        y=group_df['KLA_DSIZE_x1000'],
-                                        mode='lines+markers',
-                                        name='KLA DSIZE×1000',
-                                        marker=dict(size=8, color='#FF6B6B'),
-                                        line=dict(width=2, color='#FF6B6B')
-                                    ))
-                                    
-                                    # 添加CASI DW1O_Size的趋势线
-                                    fig_trend.add_trace(go.Scatter(
-                                        x=list(range(len(group_df))),
-                                        y=group_df['CASI_DW1O_Size'],
-                                        mode='lines+markers',
-                                        name='CASI DW1O_Size',
-                                        marker=dict(size=8, color='#4ECDC4'),
-                                        line=dict(width=2, color='#4ECDC4')
-                                    ))
-                                    
-                                    fig_trend.update_layout(
-                                        title=f'尺寸对比趋势图 - {casi_name} vs {kla_name}',
-                                        xaxis_title='缺陷编号',
-                                        yaxis_title='尺寸值（KLA DSIZE×1000）',
-                                        height=500,
-                                        hovermode='x unified',
-                                        legend=dict(
-                                            orientation="h",
-                                            yanchor="bottom",
-                                            y=1.02,
-                                            xanchor="right",
-                                            x=1
-                                        )
-                                    )
-                                    
-                                    st.plotly_chart(fig_trend, use_container_width=True)
-                                    
-                                    # 显示统计信息
-                                    col1, col2, col3, col4 = st.columns(4)
-                                    with col1:
-                                        st.metric("平均KLA DSIZE×1000", f"{group_df['KLA_DSIZE_x1000'].mean():.2f}")
-                                    with col2:
-                                        st.metric("平均CASI DW1O_Size", f"{group_df['CASI_DW1O_Size'].mean():.2f}")
-                                    with col3:
-                                        st.metric("平均差异", f"{group_df['Size差异'].mean():.2f}")
-                                    with col4:
-                                        avg_diff_rate = group_df['Size差异率(%)'].mean()
-                                        st.metric("平均差异率", f"{avg_diff_rate:.2f}%")
-                                
-                                # 总体统计分析
-                                st.write("### 📊 总体统计分析")
-                                
-                                # 箱线图对比
-                                fig_box_size = go.Figure()
-                                
-                                fig_box_size.add_trace(go.Box(
-                                    y=size_comp_df['KLA_DSIZE_x1000'],
-                                    name='KLA DSIZE×1000',
-                                    marker_color='#FF6B6B'
-                                ))
-                                
-                                fig_box_size.add_trace(go.Box(
-                                    y=size_comp_df['CASI_DW1O_Size'],
-                                    name='CASI DW1O_Size',
-                                    marker_color='#4ECDC4'
-                                ))
-                                
-                                fig_box_size.update_layout(
-                                    title='尺寸分布对比（箱线图）',
-                                    yaxis_title='尺寸值',
-                                    height=500,
-                                    showlegend=True
-                                )
-                                
-                                st.plotly_chart(fig_box_size, use_container_width=True)
-                                
-                                # 散点图：KLA vs CASI
-                                fig_scatter = go.Figure()
-                                
-                                # 按CASI-KLA组合分组着色
-                                for (casi_name, kla_name), group_df in casi_kla_pairs:
-                                    fig_scatter.add_trace(go.Scatter(
-                                        x=group_df['KLA_DSIZE_x1000'],
-                                        y=group_df['CASI_DW1O_Size'],
-                                        mode='markers',
-                                        name=f'{casi_name} vs {kla_name}',
-                                        marker=dict(size=8, opacity=0.7),
-                                        text=[f"X:{x:.0f}, Y:{y:.0f}" for x, y in zip(group_df['X坐标'], group_df['Y坐标'])],
-                                        hovertemplate='<b>%{fullData.name}</b><br>KLA DSIZE×1000: %{x:.2f}<br>CASI DW1O_Size: %{y:.2f}<br>%{text}<extra></extra>'
-                                    ))
-                                
-                                # 添加对角线（理想情况：两者相等）
-                                min_val = min(size_comp_df['KLA_DSIZE_x1000'].min(), size_comp_df['CASI_DW1O_Size'].min())
-                                max_val = max(size_comp_df['KLA_DSIZE_x1000'].max(), size_comp_df['CASI_DW1O_Size'].max())
-                                
-                                fig_scatter.add_trace(go.Scatter(
-                                    x=[min_val, max_val],
-                                    y=[min_val, max_val],
-                                    mode='lines',
-                                    name='理想匹配线',
-                                    line=dict(color='gray', dash='dash', width=2),
-                                    showlegend=True,
-                                    hoverinfo='skip'
-                                ))
-                                
-                                fig_scatter.update_layout(
-                                    title='KLA DSIZE×1000 vs CASI DW1O_Size 散点图',
-                                    xaxis_title='KLA DSIZE×1000',
-                                    yaxis_title='CASI DW1O_Size',
-                                    height=600,
-                                    hovermode='closest'
-                                )
-                                
-                                st.plotly_chart(fig_scatter, use_container_width=True)
-                                
-                                # 统计摘要表
-                                st.write("### 📋 统计摘要")
-                                summary_stats = pd.DataFrame({
-                                    '指标': ['平均值', '中位数', '标准差', '最小值', '最大值'],
-                                    'KLA DSIZE×1000': [
-                                        size_comp_df['KLA_DSIZE_x1000'].mean(),
-                                        size_comp_df['KLA_DSIZE_x1000'].median(),
-                                        size_comp_df['KLA_DSIZE_x1000'].std(),
-                                        size_comp_df['KLA_DSIZE_x1000'].min(),
-                                        size_comp_df['KLA_DSIZE_x1000'].max()
-                                    ],
-                                    'CASI DW1O_Size': [
-                                        size_comp_df['CASI_DW1O_Size'].mean(),
-                                        size_comp_df['CASI_DW1O_Size'].median(),
-                                        size_comp_df['CASI_DW1O_Size'].std(),
-                                        size_comp_df['CASI_DW1O_Size'].min(),
-                                        size_comp_df['CASI_DW1O_Size'].max()
-                                    ],
-                                    'Size差异': [
-                                        size_comp_df['Size差异'].mean(),
-                                        size_comp_df['Size差异'].median(),
-                                        size_comp_df['Size差异'].std(),
-                                        size_comp_df['Size差异'].min(),
-                                        size_comp_df['Size差异'].max()
-                                    ]
-                                })
-                                
-                                st.dataframe(summary_stats.round(2), use_container_width=True)
-                                
-                            else:
-                                st.info("未找到具有完整尺寸数据的正确检出缺陷")
-                        
-                        # 新增：DW1O_MaxOrg / DW2O_MaxOrg 比值分布分析
-                        st.write("---")
-                        st.markdown('<a name="MaxOrg比值分析"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 DW1O_MaxOrg / DW2O_MaxOrg 比值分布分析")
-                        
-                        with st.expander("🔢 查看MaxOrg比值分析详情", expanded=False):
-                            st.markdown("""
-                            分析过检、漏检和正确检出三种类型缺陷的DW1O_MaxOrg与DW2O_MaxOrg比值分布。
-                            - **比值 = DW1O_MaxOrg / DW2O_MaxOrg**
-                            - **已去除值为0的数据**
-                            - 帮助了解不同检出状态下的通道特征差异
-                            """)
-                        
-                        # 检查是否有MaxOrg比值数据
-                        has_maxorg_ratio_data = any(
-                            result.get('maxorg_ratio_stats', {}).get('has_maxorg_data', False) 
-                            for result in all_match_results
-                        )
-                        
-                        if has_maxorg_ratio_data:
-                            # 为每个CASI-KLA组合生成统计表和分布图
-                            for idx, result in enumerate(all_match_results):
-                                casi_name = result['CASI文件夹']
-                                kla_name = result['KLA文件夹']
-                                maxorg_stats = result.get('maxorg_ratio_stats', {})
-                                
-                                if not maxorg_stats.get('has_maxorg_data', False):
-                                    continue
-                                
-                                st.write(f"#### {casi_name} vs {kla_name}")
-                                
-                                # 创建统计摘要表
-                                summary_rows = []
-                                for defect_type in ['过检', '漏检', '正确检出']:
-                                    type_stats = maxorg_stats[defect_type]
-                                    if len(type_stats['ratios']) > 0:
-                                        summary_rows.append({
-                                            '缺陷类型': defect_type,
-                                            '样本数': len(type_stats['ratios']),
-                                            '均值': f"{type_stats['mean']:.4f}",
-                                            '中位数': f"{type_stats['median']:.4f}",
-                                            '标准差': f"{type_stats['std']:.4f}",
-                                            '最小值': f"{type_stats['min']:.4f}",
-                                            '最大值': f"{type_stats['max']:.4f}"
-                                        })
-                                
-                                if summary_rows:
-                                    summary_df = pd.DataFrame(summary_rows)
-                                    st.dataframe(summary_df, use_container_width=True)
-                                    
-                                    # 提供CSV下载
-                                    csv_maxorg = summary_df.to_csv(index=False, encoding='utf-8-sig')
-                                    st.download_button(
-                                        label=f"📥 下载 {casi_name}-{kla_name} MaxOrg比值统计（CSV）",
-                                        data=csv_maxorg,
-                                        file_name=f"maxorg_ratio_{casi_name}_{kla_name}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                        mime="text/csv",
-                                        key=f"download_maxorg_{idx}"
-                                    )
-                                    
-                                    # 绘制箱线图对比
-                                    st.write("**比值分布箱线图：**")
-                                    fig_maxorg_box = go.Figure()
-                                    
-                                    for defect_type in ['过检', '漏检', '正确检出']:
-                                        ratios = maxorg_stats[defect_type]['ratios']
-                                        if len(ratios) > 0:
-                                            fig_maxorg_box.add_trace(go.Box(
-                                                y=ratios,
-                                                name=f'{defect_type} (n={len(ratios)})',
-                                                boxmean='sd'
-                                            ))
-                                    
-                                    fig_maxorg_box.update_layout(
-                                        title=f'{casi_name} vs {kla_name} - DW1O_MaxOrg/DW2O_MaxOrg 比值分布',
-                                        yaxis_title='比值 (DW1O_MaxOrg / DW2O_MaxOrg)',
-                                        height=500,
-                                        showlegend=True
-                                    )
-                                    
-                                    st.plotly_chart(fig_maxorg_box, use_container_width=True)
-                                    
-                                    # 绘制直方图分布 - 分别显示
-                                    st.write("**比值分布直方图（分别显示）：**")
-                                    
-                                    colors_map = {'过检': '#FF6B6B', '漏检': '#FFE66D', '正确检出': '#4ECDC4'}
-                                    
-                                    # 为每种类型单独绘制直方图
-                                    cols_hist = st.columns(3)
-                                    
-                                    for col_idx, defect_type in enumerate(['过检', '漏检', '正确检出']):
-                                        ratios = maxorg_stats[defect_type]['ratios']
-                                        if len(ratios) > 0:
-                                            with cols_hist[col_idx]:
-                                                fig_hist_single = go.Figure()
-                                                
-                                                fig_hist_single.add_trace(go.Histogram(
-                                                    x=ratios,
-                                                    marker_color=colors_map[defect_type],
-                                                    opacity=0.8,
-                                                    nbinsx=30
-                                                ))
-                                                
-                                                fig_hist_single.update_layout(
-                                                    title=f'{defect_type}<br>(n={len(ratios)})',
-                                                    xaxis_title='比值',
-                                                    yaxis_title='频数',
-                                                    height=400,
-                                                    showlegend=False,
-                                                    margin=dict(t=60, b=40, l=40, r=20)
-                                                )
-                                                
-                                                st.plotly_chart(fig_hist_single, use_container_width=True)
-                                    
-                                    # 统计信息对比
-                                    st.write("**详细统计对比：**")
-                                    col1, col2, col3 = st.columns(3)
-                                    
-                                    with col1:
-                                        st.write("**过检：**")
-                                        overdetect_stats = maxorg_stats['过检']
-                                        if len(overdetect_stats['ratios']) > 0:
-                                            st.metric("样本数", len(overdetect_stats['ratios']))
-                                            st.metric("均值", f"{overdetect_stats['mean']:.4f}")
-                                            st.metric("中位数", f"{overdetect_stats['median']:.4f}")
-                                            st.metric("标准差", f"{overdetect_stats['std']:.4f}")
-                                        else:
-                                            st.info("无数据")
-                                    
-                                    with col2:
-                                        st.write("**漏检：**")
-                                        miss_stats = maxorg_stats['漏检']
-                                        if len(miss_stats['ratios']) > 0:
-                                            st.metric("样本数", len(miss_stats['ratios']))
-                                            st.metric("均值", f"{miss_stats['mean']:.4f}")
-                                            st.metric("中位数", f"{miss_stats['median']:.4f}")
-                                            st.metric("标准差", f"{miss_stats['std']:.4f}")
-                                        else:
-                                            st.info("无数据")
-                                    
-                                    with col3:
-                                        st.write("**正确检出：**")
-                                        correct_stats = maxorg_stats['正确检出']
-                                        if len(correct_stats['ratios']) > 0:
-                                            st.metric("样本数", len(correct_stats['ratios']))
-                                            st.metric("均值", f"{correct_stats['mean']:.4f}")
-                                            st.metric("中位数", f"{correct_stats['median']:.4f}")
-                                            st.metric("标准差", f"{correct_stats['std']:.4f}")
-                                        else:
-                                            st.info("无数据")
-                                    
-                                    st.write("---")
-                                else:
-                                    st.info(f"{casi_name} vs {kla_name}: 无有效的MaxOrg比值数据")
-                            
-                            # 总体对比（所有组合汇总）
-                            st.write("### 📊 总体MaxOrg比值分布对比（所有组合汇总）")
-                            
-                            # 收集所有组合的数据
-                            all_overdetect_ratios = []
-                            all_miss_ratios = []
-                            all_correct_ratios = []
-                            
-                            for result in all_match_results:
-                                maxorg_stats = result.get('maxorg_ratio_stats', {})
-                                if maxorg_stats.get('has_maxorg_data', False):
-                                    all_overdetect_ratios.extend(maxorg_stats['过检']['ratios'])
-                                    all_miss_ratios.extend(maxorg_stats['漏检']['ratios'])
-                                    all_correct_ratios.extend(maxorg_stats['正确检出']['ratios'])
-                            
-                            if any([all_overdetect_ratios, all_miss_ratios, all_correct_ratios]):
-                                # 总体箱线图
-                                fig_overall_maxorg = go.Figure()
-                                
-                                if len(all_overdetect_ratios) > 0:
-                                    fig_overall_maxorg.add_trace(go.Box(
-                                        y=all_overdetect_ratios,
-                                        name=f'过检 (n={len(all_overdetect_ratios)})',
-                                        marker_color='#FF6B6B',
-                                        boxmean='sd'
-                                    ))
-                                
-                                if len(all_miss_ratios) > 0:
-                                    fig_overall_maxorg.add_trace(go.Box(
-                                        y=all_miss_ratios,
-                                        name=f'漏检 (n={len(all_miss_ratios)})',
-                                        marker_color='#FFE66D',
-                                        boxmean='sd'
-                                    ))
-                                
-                                if len(all_correct_ratios) > 0:
-                                    fig_overall_maxorg.add_trace(go.Box(
-                                        y=all_correct_ratios,
-                                        name=f'正确检出 (n={len(all_correct_ratios)})',
-                                        marker_color='#4ECDC4',
-                                        boxmean='sd'
-                                    ))
-                                
-                                fig_overall_maxorg.update_layout(
-                                    title='总体DW1O_MaxOrg/DW2O_MaxOrg 比值分布对比',
-                                    yaxis_title='比值 (DW1O_MaxOrg / DW2O_MaxOrg)',
-                                    height=500,
-                                    showlegend=True
-                                )
-                                
-                                st.plotly_chart(fig_overall_maxorg, use_container_width=True)
-                                
-                                # 总体统计摘要
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    if len(all_overdetect_ratios) > 0:
-                                        st.write("**总体过检统计：**")
-                                        st.metric("样本数", len(all_overdetect_ratios))
-                                        st.metric("均值", f"{np.mean(all_overdetect_ratios):.4f}")
-                                        st.metric("中位数", f"{np.median(all_overdetect_ratios):.4f}")
-                                        st.metric("标准差", f"{np.std(all_overdetect_ratios):.4f}")
-                                
-                                with col2:
-                                    if len(all_miss_ratios) > 0:
-                                        st.write("**总体漏检统计：**")
-                                        st.metric("样本数", len(all_miss_ratios))
-                                        st.metric("均值", f"{np.mean(all_miss_ratios):.4f}")
-                                        st.metric("中位数", f"{np.median(all_miss_ratios):.4f}")
-                                        st.metric("标准差", f"{np.std(all_miss_ratios):.4f}")
-                                
-                                with col3:
-                                    if len(all_correct_ratios) > 0:
-                                        st.write("**总体正确检出统计：**")
-                                        st.metric("样本数", len(all_correct_ratios))
-                                        st.metric("均值", f"{np.mean(all_correct_ratios):.4f}")
-                                        st.metric("中位数", f"{np.median(all_correct_ratios):.4f}")
-                                        st.metric("标准差", f"{np.std(all_correct_ratios):.4f}")
-                        else:
-                            st.info("未找到DW1O_MaxOrg和DW2O_MaxOrg列，无法进行比值分析")
-                        
-                        # 新增：MaxOrg=65532统计分析（过检和正确检出）
-                        st.write("---")
-                        st.markdown('<a name="MaxOrg65532统计"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 MaxOrg=65532情况统计（过检和正确检出）")
-                        
-                        with st.expander("🔍 查看MaxOrg=65532统计详情", expanded=False):
-                            # 检查是否有任何组合包含MaxOrg 65532数据
-                            has_any_65532_data = any(
-                                result.get('maxorg_65532_stats', {}).get('has_maxorg_cols', False)
-                                for result in st.session_state.kla_match_results
-                            )
-                        
-                        if has_any_65532_data:
-                            # 逐个组合显示
-                            for result in st.session_state.kla_match_results:
-                                casi_name = result['CASI文件夹']
-                                kla_name = result['KLA文件夹']
-                                stats_65532 = result.get('maxorg_65532_stats', {})
-                                
-                                if stats_65532.get('has_maxorg_cols', False):
-                                    st.write(f"**{casi_name} vs {kla_name}**")
-                                    
-                                    # 创建两列布局：左边过检，右边正确检出
-                                    col_over, col_correct = st.columns(2)
-                                    
-                                    with col_over:
-                                        st.write("**过检缺陷：**")
-                                        overdetect_stats = stats_65532['过检']
-                                        if overdetect_stats['总数'] > 0:
-                                            over_data = []
-                                            over_data.append({'情况': '总数', '数量': overdetect_stats['总数'], '占比': '100.00%'})
-                                            over_data.append({
-                                                '情况': '三个都是65532',
-                                                '数量': overdetect_stats['三个都是65532'],
-                                                '占比': f"{overdetect_stats['三个都是65532']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': 'DW1O和DW2O是65532但DN1O不是',
-                                                '数量': overdetect_stats['DW1O和DW2O是65532但DN1O不是'],
-                                                '占比': f"{overdetect_stats['DW1O和DW2O是65532但DN1O不是']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': 'DW1O和DN1O是65532但DW2O不是',
-                                                '数量': overdetect_stats['DW1O和DN1O是65532但DW2O不是'],
-                                                '占比': f"{overdetect_stats['DW1O和DN1O是65532但DW2O不是']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': 'DW2O和DN1O是65532但DW1O不是',
-                                                '数量': overdetect_stats['DW2O和DN1O是65532但DW1O不是'],
-                                                '占比': f"{overdetect_stats['DW2O和DN1O是65532但DW1O不是']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': 'DW1O是65532但DW2O和DN1O不是',
-                                                '数量': overdetect_stats['DW1O是65532但DW2O和DN1O不是'],
-                                                '占比': f"{overdetect_stats['DW1O是65532但DW2O和DN1O不是']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': 'DW2O是65532但DW1O和DN1O不是',
-                                                '数量': overdetect_stats['DW2O是65532但DW1O和DN1O不是'],
-                                                '占比': f"{overdetect_stats['DW2O是65532但DW1O和DN1O不是']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': 'DN1O是65532但DW1O和DW2O不是',
-                                                '数量': overdetect_stats['DN1O是65532但DW1O和DW2O不是'],
-                                                '占比': f"{overdetect_stats['DN1O是65532但DW1O和DW2O不是']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            over_data.append({
-                                                '情况': '都不是65532',
-                                                '数量': overdetect_stats['都不是65532'],
-                                                '占比': f"{overdetect_stats['都不是65532']/overdetect_stats['总数']*100:.2f}%"
-                                            })
-                                            
-                                            over_df = pd.DataFrame(over_data)
-                                            st.dataframe(over_df, use_container_width=True, hide_index=True)
-                                        else:
-                                            st.info("无过检数据")
-                                    
-                                    with col_correct:
-                                        st.write("**正确检出缺陷：**")
-                                        correct_stats = stats_65532['正确检出']
-                                        if correct_stats['总数'] > 0:
-                                            correct_data = []
-                                            correct_data.append({'情况': '总数', '数量': correct_stats['总数'], '占比': '100.00%'})
-                                            correct_data.append({
-                                                '情况': '三个都是65532',
-                                                '数量': correct_stats['三个都是65532'],
-                                                '占比': f"{correct_stats['三个都是65532']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': 'DW1O和DW2O是65532但DN1O不是',
-                                                '数量': correct_stats['DW1O和DW2O是65532但DN1O不是'],
-                                                '占比': f"{correct_stats['DW1O和DW2O是65532但DN1O不是']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': 'DW1O和DN1O是65532但DW2O不是',
-                                                '数量': correct_stats['DW1O和DN1O是65532但DW2O不是'],
-                                                '占比': f"{correct_stats['DW1O和DN1O是65532但DW2O不是']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': 'DW2O和DN1O是65532但DW1O不是',
-                                                '数量': correct_stats['DW2O和DN1O是65532但DW1O不是'],
-                                                '占比': f"{correct_stats['DW2O和DN1O是65532但DW1O不是']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': 'DW1O是65532但DW2O和DN1O不是',
-                                                '数量': correct_stats['DW1O是65532但DW2O和DN1O不是'],
-                                                '占比': f"{correct_stats['DW1O是65532但DW2O和DN1O不是']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': 'DW2O是65532但DW1O和DN1O不是',
-                                                '数量': correct_stats['DW2O是65532但DW1O和DN1O不是'],
-                                                '占比': f"{correct_stats['DW2O是65532但DW1O和DN1O不是']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': 'DN1O是65532但DW1O和DW2O不是',
-                                                '数量': correct_stats['DN1O是65532但DW1O和DW2O不是'],
-                                                '占比': f"{correct_stats['DN1O是65532但DW1O和DW2O不是']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            correct_data.append({
-                                                '情况': '都不是65532',
-                                                '数量': correct_stats['都不是65532'],
-                                                '占比': f"{correct_stats['都不是65532']/correct_stats['总数']*100:.2f}%"
-                                            })
-                                            
-                                            correct_df = pd.DataFrame(correct_data)
-                                            st.dataframe(correct_df, use_container_width=True, hide_index=True)
-                                        else:
-                                            st.info("无正确检出数据")
-                                    
-                                    st.write("---")
-                            
-                            # 总体汇总（所有组合）
-                            st.write("### 📊 总体MaxOrg=65532统计（所有组合汇总）")
-                            
-                            # 汇总所有组合的数据
-                            total_over_stats = {
-                                '总数': 0,
-                                '三个都是65532': 0,
-                                'DW1O和DW2O是65532但DN1O不是': 0,
-                                'DW1O是65532但DW2O和DN1O不是': 0,
-                                'DW2O是65532但DW1O和DN1O不是': 0,
-                                'DN1O是65532但DW1O和DW2O不是': 0,
-                                'DW1O和DN1O是65532但DW2O不是': 0,
-                                'DW2O和DN1O是65532但DW1O不是': 0,
-                                '都不是65532': 0
-                            }
-                            
-                            total_correct_stats = {
-                                '总数': 0,
-                                '三个都是65532': 0,
-                                'DW1O和DW2O是65532但DN1O不是': 0,
-                                'DW1O是65532但DW2O和DN1O不是': 0,
-                                'DW2O是65532但DW1O和DN1O不是': 0,
-                                'DN1O是65532但DW1O和DW2O不是': 0,
-                                'DW1O和DN1O是65532但DW2O不是': 0,
-                                'DW2O和DN1O是65532但DW1O不是': 0,
-                                '都不是65532': 0
-                            }
-                            
-                            for result in st.session_state.kla_match_results:
-                                stats_65532 = result.get('maxorg_65532_stats', {})
-                                if stats_65532.get('has_maxorg_cols', False):
-                                    for key in total_over_stats.keys():
-                                        total_over_stats[key] += stats_65532['过检'][key]
-                                        total_correct_stats[key] += stats_65532['正确检出'][key]
-                            
-                            # 显示汇总表格
-                            col_over_total, col_correct_total = st.columns(2)
-                            
-                            with col_over_total:
-                                st.write("**总体过检统计：**")
-                                if total_over_stats['总数'] > 0:
-                                    total_over_data = []
-                                    for situation, count in total_over_stats.items():
-                                        if situation == '总数':
-                                            total_over_data.append({'情况': situation, '数量': count, '占比': '100.00%'})
-                                        else:
-                                            total_over_data.append({
-                                                '情况': situation,
-                                                '数量': count,
-                                                '占比': f"{count/total_over_stats['总数']*100:.2f}%"
-                                            })
-                                    
-                                    total_over_df = pd.DataFrame(total_over_data)
-                                    st.dataframe(total_over_df, use_container_width=True, hide_index=True)
-                                else:
-                                    st.info("无过检数据")
-                            
-                            with col_correct_total:
-                                st.write("**总体正确检出统计：**")
-                                if total_correct_stats['总数'] > 0:
-                                    total_correct_data = []
-                                    for situation, count in total_correct_stats.items():
-                                        if situation == '总数':
-                                            total_correct_data.append({'情况': situation, '数量': count, '占比': '100.00%'})
-                                        else:
-                                            total_correct_data.append({
-                                                '情况': situation,
-                                                '数量': count,
-                                                '占比': f"{count/total_correct_stats['总数']*100:.2f}%"
-                                            })
-                                    
-                                    total_correct_df = pd.DataFrame(total_correct_data)
-                                    st.dataframe(total_correct_df, use_container_width=True, hide_index=True)
-                                else:
-                                    st.info("无正确检出数据")
-                        else:
-                            st.info("未找到DW1O_MaxOrg、DW2O_MaxOrg和DN1O_MaxOrg列，无法进行65532统计分析")
-                    
-                        # 新增：DW1O通道比值分析（SubRow1Max, SubRow2Max, MainRowMax）
-                        st.write("---")
-                        st.markdown('<a name="DW1O通道比值"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 DW1O通道比值分布分析")
-                        
-                        with st.expander("📈 查看DW1O通道比值分析详情", expanded=False):
-                            # 检查是否有任何组合包含DW1O通道数据
-                            has_any_dw1o = any(
-                                result.get('dw1o_ratio_stats', {}).get('has_dw1o_data', False)
-                                for result in st.session_state.kla_match_results
-                            )
-                        
-                        if has_any_dw1o:
-                            # 三个比值类型
-                            ratio_names = ['SubRow1/SubRow2', 'MainRow/SubRow1', 'MainRow/SubRow2']
-                            
-                            # 为每个比值类型创建分析
-                            for ratio_name in ratio_names:
-                                st.write(f"### 📈 {ratio_name} 比值分析")
-                                
-                                # 逐个组合显示
-                                for result in st.session_state.kla_match_results:
-                                    casi_name = result['CASI文件夹']
-                                    kla_name = result['KLA文件夹']
-                                    dw1o_stats = result.get('dw1o_ratio_stats', {})
-                                    
-                                    if dw1o_stats.get('has_dw1o_data', False):
-                                        st.write(f"**{casi_name} vs {kla_name}**")
-                                        
-                                        # 汇总表格
-                                        summary_data = []
-                                        for defect_type in ['过检', '漏检', '正确检出', 'KLA检出']:
-                                            stats = dw1o_stats[defect_type][ratio_name]
-                                            if len(stats['ratios']) > 0:
-                                                summary_data.append({
-                                                    '类型': defect_type,
-                                                    '样本数': len(stats['ratios']),
-                                                    '均值': f"{stats['mean']:.4f}",
-                                                    '中位数': f"{stats['median']:.4f}",
-                                                    '最小值': f"{stats['min']:.4f}",
-                                                    '最大值': f"{stats['max']:.4f}",
-                                                    '标准差': f"{stats['std']:.4f}"
-                                                })
-                                        
-                                        if summary_data:
-                                            summary_df = pd.DataFrame(summary_data)
-                                            st.dataframe(summary_df, use_container_width=True)
-                                            
-                                            # 箱型图对比
-                                            fig_box = go.Figure()
-                                            colors = {'过检': '#FF6B6B', '漏检': '#4ECDC4', '正确检出': '#95E1D3', 'KLA检出': '#FFA07A'}
-                                            
-                                            for defect_type in ['过检', '漏检', '正确检出', 'KLA检出']:
-                                                ratios = dw1o_stats[defect_type][ratio_name]['ratios']
-                                                if len(ratios) > 0:
-                                                    fig_box.add_trace(go.Box(
-                                                        y=ratios,
-                                                        name=defect_type,
-                                                        marker_color=colors[defect_type],
-                                                        boxmean='sd'
-                                                    ))
-                                            
-                                            fig_box.update_layout(
-                                                title=f'{ratio_name} 比值箱型图对比<br>{casi_name} vs {kla_name}',
-                                                yaxis_title='比值',
-                                                height=400,
-                                                showlegend=True
-                                            )
-                                            
-                                            st.plotly_chart(fig_box, use_container_width=True)
-                                            
-                                            # 分别列出直方图（4列：过检、漏检、正确检出、KLA检出）
-                                            st.write("**各类型比值分布直方图：**")
-                                            cols_hist = st.columns(4)
-                                            
-                                            for idx, defect_type in enumerate(['过检', '漏检', '正确检出', 'KLA检出']):
-                                                with cols_hist[idx]:
-                                                    ratios = dw1o_stats[defect_type][ratio_name]['ratios']
-                                                    if len(ratios) > 0:
-                                                        fig_hist_single = go.Figure()
-                                                        fig_hist_single.add_trace(go.Histogram(
-                                                            x=ratios,
-                                                            nbinsx=30,
-                                                            marker_color=colors[defect_type],
-                                                            opacity=0.8,
-                                                            name=defect_type
-                                                        ))
-                                                        
-                                                        fig_hist_single.update_layout(
-                                                            title=f'{defect_type}<br>(n={len(ratios)})',
-                                                            xaxis_title='比值',
-                                                            yaxis_title='频数',
-                                                            height=400,
-                                                            showlegend=False,
-                                                            margin=dict(t=60, b=40, l=40, r=20)
-                                                        )
-                                                        
-                                                        st.plotly_chart(fig_hist_single, use_container_width=True)
-                                            
-                                            # 统计信息对比
-                                            st.write("**详细统计对比：**")
-                                            col1, col2, col3, col4 = st.columns(4)
-                                            
-                                            with col1:
-                                                st.write("**过检：**")
-                                                stats = dw1o_stats['过检'][ratio_name]
-                                                if len(stats['ratios']) > 0:
-                                                    st.metric("样本数", len(stats['ratios']))
-                                                    st.metric("均值", f"{stats['mean']:.4f}")
-                                                    st.metric("中位数", f"{stats['median']:.4f}")
-                                                    st.metric("标准差", f"{stats['std']:.4f}")
-                                                else:
-                                                    st.info("无数据")
-                                            
-                                            with col2:
-                                                st.write("**漏检：**")
-                                                stats = dw1o_stats['漏检'][ratio_name]
-                                                if len(stats['ratios']) > 0:
-                                                    st.metric("样本数", len(stats['ratios']))
-                                                    st.metric("均值", f"{stats['mean']:.4f}")
-                                                    st.metric("中位数", f"{stats['median']:.4f}")
-                                                    st.metric("标准差", f"{stats['std']:.4f}")
-                                                else:
-                                                    st.info("无数据")
-                                            
-                                            with col3:
-                                                st.write("**正确检出：**")
-                                                stats = dw1o_stats['正确检出'][ratio_name]
-                                                if len(stats['ratios']) > 0:
-                                                    st.metric("样本数", len(stats['ratios']))
-                                                    st.metric("均值", f"{stats['mean']:.4f}")
-                                                    st.metric("中位数", f"{stats['median']:.4f}")
-                                                    st.metric("标准差", f"{stats['std']:.4f}")
-                                                else:
-                                                    st.info("无数据")
-                                            
-                                            with col4:
-                                                st.write("**KLA检出：**")
-                                                stats = dw1o_stats['KLA检出'][ratio_name]
-                                                if len(stats['ratios']) > 0:
-                                                    st.metric("样本数", len(stats['ratios']))
-                                                    st.metric("均值", f"{stats['mean']:.4f}")
-                                                    st.metric("中位数", f"{stats['median']:.4f}")
-                                                    st.metric("标准差", f"{stats['std']:.4f}")
-                                                else:
-                                                    st.info("无数据")
-                                            
-                                            st.write("---")
-                                        else:
-                                            st.info(f"{casi_name} vs {kla_name}: 无有效的{ratio_name}比值数据")
-                                
-                                # 总体对比（所有组合汇总）
-                                st.write(f"#### 📊 总体{ratio_name}比值分布对比（所有组合汇总）")
-                                
-                                # 收集所有组合的数据
-                                all_overdetect_ratios = []
-                                all_miss_ratios = []
-                                all_correct_ratios = []
-                                all_kla_ratios = []
-                                
-                                for result in st.session_state.kla_match_results:
-                                    dw1o_stats = result.get('dw1o_ratio_stats', {})
-                                    if dw1o_stats.get('has_dw1o_data', False):
-                                        all_overdetect_ratios.extend(dw1o_stats['过检'][ratio_name]['ratios'])
-                                        all_miss_ratios.extend(dw1o_stats['漏检'][ratio_name]['ratios'])
-                                        all_correct_ratios.extend(dw1o_stats['正确检出'][ratio_name]['ratios'])
-                                        all_kla_ratios.extend(dw1o_stats['KLA检出'][ratio_name]['ratios'])
-                                
-                                if all_overdetect_ratios or all_miss_ratios or all_correct_ratios or all_kla_ratios:
-                                    # 箱型图
-                                    fig_overall_box = go.Figure()
-                                    colors = {'过检': '#FF6B6B', '漏检': '#4ECDC4', '正确检出': '#95E1D3', 'KLA检出': '#FFA07A'}
-                                    
-                                    if all_overdetect_ratios:
-                                        fig_overall_box.add_trace(go.Box(
-                                            y=all_overdetect_ratios,
-                                            name='过检',
-                                            marker_color=colors['过检'],
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    if all_miss_ratios:
-                                        fig_overall_box.add_trace(go.Box(
-                                            y=all_miss_ratios,
-                                            name='漏检',
-                                            marker_color=colors['漏检'],
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    if all_correct_ratios:
-                                        fig_overall_box.add_trace(go.Box(
-                                            y=all_correct_ratios,
-                                            name='正确检出',
-                                            marker_color=colors['正确检出'],
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    if all_kla_ratios:
-                                        fig_overall_box.add_trace(go.Box(
-                                            y=all_kla_ratios,
-                                            name='KLA检出',
-                                            marker_color=colors['KLA检出'],
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    fig_overall_box.update_layout(
-                                        title=f'总体{ratio_name}比值箱型图对比（所有组合汇总）',
-                                        yaxis_title='比值',
-                                        height=400,
-                                        showlegend=True
-                                    )
-                                    
-                                    st.plotly_chart(fig_overall_box, use_container_width=True)
-                                    
-                                    # 总体统计摘要
-                                    col1, col2, col3, col4 = st.columns(4)
-                                    
-                                    with col1:
-                                        if len(all_overdetect_ratios) > 0:
-                                            st.write("**总体过检统计：**")
-                                            st.metric("样本数", len(all_overdetect_ratios))
-                                            st.metric("均值", f"{np.mean(all_overdetect_ratios):.4f}")
-                                            st.metric("中位数", f"{np.median(all_overdetect_ratios):.4f}")
-                                            st.metric("标准差", f"{np.std(all_overdetect_ratios):.4f}")
-                                    
-                                    with col2:
-                                        if len(all_miss_ratios) > 0:
-                                            st.write("**总体漏检统计：**")
-                                            st.metric("样本数", len(all_miss_ratios))
-                                            st.metric("均值", f"{np.mean(all_miss_ratios):.4f}")
-                                            st.metric("中位数", f"{np.median(all_miss_ratios):.4f}")
-                                            st.metric("标准差", f"{np.std(all_miss_ratios):.4f}")
-                                    
-                                    with col3:
-                                        if len(all_correct_ratios) > 0:
-                                            st.write("**总体正确检出统计：**")
-                                            st.metric("样本数", len(all_correct_ratios))
-                                            st.metric("均值", f"{np.mean(all_correct_ratios):.4f}")
-                                            st.metric("中位数", f"{np.median(all_correct_ratios):.4f}")
-                                            st.metric("标准差", f"{np.std(all_correct_ratios):.4f}")
-                                    
-                                    with col4:
-                                        if len(all_kla_ratios) > 0:
-                                            st.write("**总体KLA检出统计：**")
-                                            st.metric("样本数", len(all_kla_ratios))
-                                            st.metric("均值", f"{np.mean(all_kla_ratios):.4f}")
-                                            st.metric("中位数", f"{np.median(all_kla_ratios):.4f}")
-                                            st.metric("标准差", f"{np.std(all_kla_ratios):.4f}")
-                                
-                                st.write("---")
-                        else:
-                            st.info("未找到DW1O_SubRow1Max、DW1O_SubRow2Max和DW1O_MainRowMax列，无法进行比值分析")
-                    
-                        # 新增：BGMean值分布分析（过检和正确检出，去除0值）
-                        st.write("---")
-                        st.markdown('<a name="BGMean值分布"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 BGMean值分布分析（过检和正确检出）")
-                        
-                        with st.expander("💡 查看BGMean值分布分析详情", expanded=False):
-                            st.markdown("""
-                            分析过检和正确检出缺陷的DW1O_BGMean、DW2O_BGMean和DN1O_BGMean值分布。
-                            - **BGMean**: 背景均值，反映缺陷周围的背景灰度水平
-                            - **已去除值为0的数据**
-                            - 仅分析过检和正确检出两种类型，不包括漏检
-                            - 帮助了解不同检出状态下的背景特征差异
-                            """)
-                        
-                        # 检查是否有BGMean数据
-                        has_any_bgmean_data = any(
-                            result.get('bgmean_stats', {}).get('has_bgmean_data', False)
-                            for result in st.session_state.kla_match_results
-                        )
-                        
-                        if has_any_bgmean_data:
-                            # 三个BGMean通道
-                            bgmean_channels = ['DW1O_BGMean', 'DW2O_BGMean', 'DN1O_BGMean']
-                            
-                            # 为每个BGMean通道创建分析
-                            for bgmean_channel in bgmean_channels:
-                                st.write(f"### 📈 {bgmean_channel} 值分析")
-                                
-                                # 逐个组合显示
-                                for result in st.session_state.kla_match_results:
-                                    casi_name = result['CASI文件夹']
-                                    kla_name = result['KLA文件夹']
-                                    bgmean_stats = result.get('bgmean_stats', {})
-                                    
-                                    if bgmean_stats.get('has_bgmean_data', False):
-                                        st.write(f"**{casi_name} vs {kla_name}**")
-                                        
-                                        # 汇总表格
-                                        summary_data = []
-                                        for defect_type in ['过检', '正确检出']:
-                                            stats = bgmean_stats[defect_type][bgmean_channel]
-                                            if len(stats['values']) > 0:
-                                                summary_data.append({
-                                                    '类型': defect_type,
-                                                    '样本数': len(stats['values']),
-                                                    '均值': f"{stats['mean']:.2f}",
-                                                    '中位数': f"{stats['median']:.2f}",
-                                                    '最小值': f"{stats['min']:.2f}",
-                                                    '最大值': f"{stats['max']:.2f}",
-                                                    '标准差': f"{stats['std']:.2f}"
-                                                })
-                                        
-                                        if summary_data:
-                                            summary_df = pd.DataFrame(summary_data)
-                                            st.dataframe(summary_df, use_container_width=True)
-                                            
-                                            # 箱型图对比
-                                            fig_box = go.Figure()
-                                            colors = {'过检': '#FF6B6B', '正确检出': '#4ECDC4'}
-                                            
-                                            for defect_type in ['过检', '正确检出']:
-                                                values = bgmean_stats[defect_type][bgmean_channel]['values']
-                                                if len(values) > 0:
-                                                    fig_box.add_trace(go.Box(
-                                                        y=values,
-                                                        name=defect_type,
-                                                        marker_color=colors[defect_type],
-                                                        boxmean='sd'
-                                                    ))
-                                            
-                                            fig_box.update_layout(
-                                                title=f'{bgmean_channel} 值箱型图对比<br>{casi_name} vs {kla_name}',
-                                                yaxis_title=bgmean_channel,
-                                                height=400,
-                                                showlegend=True
-                                            )
-                                            
-                                            st.plotly_chart(fig_box, use_container_width=True)
-                                            
-                                            # 直方图分布（两列：过检和正确检出）
-                                            st.write("**各类型值分布直方图：**")
-                                            cols_hist = st.columns(2)
-                                            
-                                            for idx, defect_type in enumerate(['过检', '正确检出']):
-                                                with cols_hist[idx]:
-                                                    values = bgmean_stats[defect_type][bgmean_channel]['values']
-                                                    if len(values) > 0:
-                                                        fig_hist_single = go.Figure()
-                                                        fig_hist_single.add_trace(go.Histogram(
-                                                            x=values,
-                                                            nbinsx=30,
-                                                            marker_color=colors[defect_type],
-                                                            opacity=0.8,
-                                                            name=defect_type
-                                                        ))
-                                                        
-                                                        fig_hist_single.update_layout(
-                                                            title=f'{defect_type}<br>(n={len(values)})',
-                                                            xaxis_title=bgmean_channel,
-                                                            yaxis_title='频数',
-                                                            height=400,
-                                                            showlegend=False,
-                                                            margin=dict(t=60, b=40, l=40, r=20)
-                                                        )
-                                                        
-                                                        st.plotly_chart(fig_hist_single, use_container_width=True)
-                                            
-                                            # 统计信息对比
-                                            st.write("**详细统计对比：**")
-                                            col1, col2 = st.columns(2)
-                                            
-                                            with col1:
-                                                st.write("**过检：**")
-                                                stats = bgmean_stats['过检'][bgmean_channel]
-                                                if len(stats['values']) > 0:
-                                                    st.metric("样本数", len(stats['values']))
-                                                    st.metric("均值", f"{stats['mean']:.2f}")
-                                                    st.metric("中位数", f"{stats['median']:.2f}")
-                                                    st.metric("标准差", f"{stats['std']:.2f}")
-                                                else:
-                                                    st.info("无数据")
-                                            
-                                            with col2:
-                                                st.write("**正确检出：**")
-                                                stats = bgmean_stats['正确检出'][bgmean_channel]
-                                                if len(stats['values']) > 0:
-                                                    st.metric("样本数", len(stats['values']))
-                                                    st.metric("均值", f"{stats['mean']:.2f}")
-                                                    st.metric("中位数", f"{stats['median']:.2f}")
-                                                    st.metric("标准差", f"{stats['std']:.2f}")
-                                                else:
-                                                    st.info("无数据")
-                                            
-                                            st.write("---")
-                                        else:
-                                            st.info(f"{casi_name} vs {kla_name}: 无有效的{bgmean_channel}数据")
-                                
-                                # 总体对比（所有组合汇总）
-                                st.write(f"#### 📊 总体{bgmean_channel}值分布对比（所有组合汇总）")
-                                
-                                # 收集所有组合的数据
-                                all_overdetect_values = []
-                                all_correct_values = []
-                                
-                                for result in st.session_state.kla_match_results:
-                                    bgmean_stats = result.get('bgmean_stats', {})
-                                    if bgmean_stats.get('has_bgmean_data', False):
-                                        all_overdetect_values.extend(bgmean_stats['过检'][bgmean_channel]['values'])
-                                        all_correct_values.extend(bgmean_stats['正确检出'][bgmean_channel]['values'])
-                                
-                                if all_overdetect_values or all_correct_values:
-                                    # 箱型图
-                                    fig_overall_box = go.Figure()
-                                    colors = {'过检': '#FF6B6B', '正确检出': '#4ECDC4'}
-                                    
-                                    if all_overdetect_values:
-                                        fig_overall_box.add_trace(go.Box(
-                                            y=all_overdetect_values,
-                                            name=f'过检 (n={len(all_overdetect_values)})',
-                                            marker_color=colors['过检'],
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    if all_correct_values:
-                                        fig_overall_box.add_trace(go.Box(
-                                            y=all_correct_values,
-                                            name=f'正确检出 (n={len(all_correct_values)})',
-                                            marker_color=colors['正确检出'],
-                                            boxmean='sd'
-                                        ))
-                                    
-                                    fig_overall_box.update_layout(
-                                        title=f'总体{bgmean_channel}值箱型图对比（所有组合汇总）',
-                                        yaxis_title=bgmean_channel,
-                                        height=400,
-                                        showlegend=True
-                                    )
-                                    
-                                    st.plotly_chart(fig_overall_box, use_container_width=True)
-                                    
-                                    # 总体统计摘要
-                                    col1, col2 = st.columns(2)
-                                    
-                                    with col1:
-                                        if len(all_overdetect_values) > 0:
-                                            st.write("**总体过检统计：**")
-                                            st.metric("样本数", len(all_overdetect_values))
-                                            st.metric("均值", f"{np.mean(all_overdetect_values):.2f}")
-                                            st.metric("中位数", f"{np.median(all_overdetect_values):.2f}")
-                                            st.metric("标准差", f"{np.std(all_overdetect_values):.2f}")
-                                    
-                                    with col2:
-                                        if len(all_correct_values) > 0:
-                                            st.write("**总体正确检出统计：**")
-                                            st.metric("样本数", len(all_correct_values))
-                                            st.metric("均值", f"{np.mean(all_correct_values):.2f}")
-                                            st.metric("中位数", f"{np.median(all_correct_values):.2f}")
-                                            st.metric("标准差", f"{np.std(all_correct_values):.2f}")
-                                
-                                st.write("---")
-                            
-                            # 新增：所有文件BGMean数据汇总表格
-                            st.write("---")
-                            st.markdown('<a name="BGMean汇总表"></a>', unsafe_allow_html=True)
-                            st.subheader("📋 BGMean数据汇总表格（所有文件）")
-                            
-                            st.markdown("""
-                            汇总所有CASI-KLA组合的BGMean统计数据，便于对比分析。
-                            - 包含过检和正确检出两种类型
-                            - 显示DW1O_BGMean、DW2O_BGMean、DN1O_BGMean的统计值
-                            - 已排除值为0的数据
-                            """)
-                            
-                            # 创建汇总数据列表
-                            summary_table_data = []
-                            
-                            for result in st.session_state.kla_match_results:
-                                casi_name = result['CASI文件夹']
-                                kla_name = result['KLA文件夹']
-                                bgmean_stats = result.get('bgmean_stats', {})
-                                
-                                if bgmean_stats.get('has_bgmean_data', False):
-                                    # 对每种缺陷类型创建一行
-                                    for defect_type in ['过检', '正确检出']:
-                                        row = {
-                                            'CASI文件夹': casi_name,
-                                            'KLA文件夹': kla_name,
-                                            '缺陷类型': defect_type
-                                        }
-                                        
-                                        # 添加DW1O_BGMean统计
-                                        dw1o_stats = bgmean_stats[defect_type].get('DW1O_BGMean', {})
-                                        if dw1o_stats and len(dw1o_stats.get('values', [])) > 0:
-                                            row['DW1O_样本数'] = len(dw1o_stats['values'])
-                                            row['DW1O_均值'] = round(dw1o_stats['mean'], 2)
-                                            row['DW1O_中位数'] = round(dw1o_stats['median'], 2)
-                                            row['DW1O_最小值'] = round(dw1o_stats['min'], 2)
-                                            row['DW1O_最大值'] = round(dw1o_stats['max'], 2)
-                                            row['DW1O_标准差'] = round(dw1o_stats['std'], 2)
-                                        else:
-                                            row['DW1O_样本数'] = 0
-                                            row['DW1O_均值'] = '-'
-                                            row['DW1O_中位数'] = '-'
-                                            row['DW1O_最小值'] = '-'
-                                            row['DW1O_最大值'] = '-'
-                                            row['DW1O_标准差'] = '-'
-                                        
-                                        # 添加DW2O_BGMean统计
-                                        dw2o_stats = bgmean_stats[defect_type].get('DW2O_BGMean', {})
-                                        if dw2o_stats and len(dw2o_stats.get('values', [])) > 0:
-                                            row['DW2O_样本数'] = len(dw2o_stats['values'])
-                                            row['DW2O_均值'] = round(dw2o_stats['mean'], 2)
-                                            row['DW2O_中位数'] = round(dw2o_stats['median'], 2)
-                                            row['DW2O_最小值'] = round(dw2o_stats['min'], 2)
-                                            row['DW2O_最大值'] = round(dw2o_stats['max'], 2)
-                                            row['DW2O_标准差'] = round(dw2o_stats['std'], 2)
-                                        else:
-                                            row['DW2O_样本数'] = 0
-                                            row['DW2O_均值'] = '-'
-                                            row['DW2O_中位数'] = '-'
-                                            row['DW2O_最小值'] = '-'
-                                            row['DW2O_最大值'] = '-'
-                                            row['DW2O_标准差'] = '-'
-                                        
-                                        # 添加DN1O_BGMean统计
-                                        dn1o_stats = bgmean_stats[defect_type].get('DN1O_BGMean', {})
-                                        if dn1o_stats and len(dn1o_stats.get('values', [])) > 0:
-                                            row['DN1O_样本数'] = len(dn1o_stats['values'])
-                                            row['DN1O_均值'] = round(dn1o_stats['mean'], 2)
-                                            row['DN1O_中位数'] = round(dn1o_stats['median'], 2)
-                                            row['DN1O_最小值'] = round(dn1o_stats['min'], 2)
-                                            row['DN1O_最大值'] = round(dn1o_stats['max'], 2)
-                                            row['DN1O_标准差'] = round(dn1o_stats['std'], 2)
-                                        else:
-                                            row['DN1O_样本数'] = 0
-                                            row['DN1O_均值'] = '-'
-                                            row['DN1O_中位数'] = '-'
-                                            row['DN1O_最小值'] = '-'
-                                            row['DN1O_最大值'] = '-'
-                                            row['DN1O_标准差'] = '-'
-                                        
-                                        summary_table_data.append(row)
-                            
-                            if summary_table_data:
-                                # 创建汇总DataFrame
-                                summary_table_df = pd.DataFrame(summary_table_data)
-                                
-                                # 重新排列列的顺序
-                                columns_order = [
-                                    'CASI文件夹', 'KLA文件夹', '缺陷类型',
-                                    'DW1O_样本数', 'DW1O_均值', 'DW1O_中位数', 'DW1O_最小值', 'DW1O_最大值', 'DW1O_标准差',
-                                    'DW2O_样本数', 'DW2O_均值', 'DW2O_中位数', 'DW2O_最小值', 'DW2O_最大值', 'DW2O_标准差',
-                                    'DN1O_样本数', 'DN1O_均值', 'DN1O_中位数', 'DN1O_最小值', 'DN1O_最大值', 'DN1O_标准差'
-                                ]
-                                
-                                # 只保留存在的列
-                                columns_order = [col for col in columns_order if col in summary_table_df.columns]
-                                summary_table_df = summary_table_df[columns_order]
-                                
-                                # 显示汇总表格
-                                st.write("### 📊 BGMean统计汇总表")
-                                st.dataframe(summary_table_df, use_container_width=True, height=400)
-                                
-                                # 提供CSV下载
-                                csv_summary = summary_table_df.to_csv(index=False, encoding='utf-8-sig')
-                                st.download_button(
-                                    label="📥 下载BGMean汇总表格（CSV）",
-                                    data=csv_summary,
-                                    file_name=f"bgmean_summary_all_files_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv",
-                                    help="下载包含所有文件BGMean统计数据的汇总表格"
-                                )
-                                
-                                # 统计摘要
-                                st.write("### 📈 汇总统计")
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    st.metric("组合总数", len(st.session_state.kla_match_results))
-                                    st.metric("数据行数", len(summary_table_df))
-                                
-                                with col2:
-                                    overdetect_rows = summary_table_df[summary_table_df['缺陷类型'] == '过检']
-                                    st.metric("过检数据行", len(overdetect_rows))
-                                    if len(overdetect_rows) > 0:
-                                        total_samples = overdetect_rows[['DW1O_样本数', 'DW2O_样本数', 'DN1O_样本数']].sum().sum()
-                                        st.caption(f"过检总样本数: {total_samples}")
-                                
-                                with col3:
-                                    correct_rows = summary_table_df[summary_table_df['缺陷类型'] == '正确检出']
-                                    st.metric("正确检出数据行", len(correct_rows))
-                                    if len(correct_rows) > 0:
-                                        total_samples = correct_rows[['DW1O_样本数', 'DW2O_样本数', 'DN1O_样本数']].sum().sum()
-                                        st.caption(f"正检总样本数: {total_samples}")
-                                
-                                st.info("💡 提示：表格中'-'表示该项无有效数据。所有统计值已排除BGMean为0的数据。")
-                            else:
-                                st.warning("没有可汇总的BGMean数据")
-                        else:
-                            st.info("未找到DW1O_BGMean、DW2O_BGMean或DN1O_BGMean列，无法进行BGMean分析")
-                    
-                        # 新增：TotalSNR按尺寸分布分析
-                        st.write("---")
-                        st.markdown('<a name="TotalSNR尺寸分布"></a>', unsafe_allow_html=True)
-                        st.subheader("📊 TotalSNR按尺寸分布分析")
-                        
-                        with st.expander("🔍 查看TotalSNR按尺寸分布分析详情", expanded=False):
-                            st.markdown("""
-                            分析过检和正确检出缺陷的各通道TotalSNR值在不同尺寸区间的分布。
-                            - **尺寸区间**：从26nm开始，每2nm一个区间（26-28, 28-30, ...）
-                            - **通道**：DW1O_TotalSNR, DW2O_TotalSNR, DN1O_TotalSNR
-                            - **缺陷类型**：过检和正确检出
-                            - **尺寸判断**：使用DW1O_Size作为主要判断（如无则使用DW2O或DN1O）
-                            """)
-                        
-                        # 检查是否有任何组合包含SNR数据
-                        has_any_snr_data = any(
-                            result.get('totalsnr_size_stats', {}).get('has_snr_data', False)
-                            for result in st.session_state.kla_match_results
-                        )
-                        
-                        if has_any_snr_data:
-                            # 为每个CASI-KLA组合生成分析
-                            for idx, result in enumerate(st.session_state.kla_match_results):
-                                casi_name = result['CASI文件夹']
-                                kla_name = result['KLA文件夹']
-                                snr_stats = result.get('totalsnr_size_stats', {})
-                                
-                                if not snr_stats.get('has_snr_data', False):
-                                    continue
-                                
-                                st.write(f"### {casi_name} vs {kla_name}")
-                                
-                                # 为每种缺陷类型和通道生成箱线图
-                                for defect_type in ['过检', '正确检出']:
-                                    st.write(f"#### {defect_type}")
-                                    
-                                    defect_data = snr_stats[defect_type]
-                                    size_bins = snr_stats['size_bins']
-                                    
-                                    # 为每个通道创建箱线图
-                                    for channel in ['DW1O_TotalSNR', 'DW2O_TotalSNR', 'DN1O_TotalSNR']:
-                                        st.write(f"**{channel} 分布：**")
-                                        
-                                        # 收集有数据的尺寸区间
-                                        plot_data = []
-                                        for size_bin in size_bins:
-                                            if size_bin in defect_data:
-                                                snr_values = defect_data[size_bin][channel]
-                                                if len(snr_values) > 0:
-                                                    plot_data.append({
-                                                        'size_bin': f"{size_bin}-{size_bin+2}nm",
-                                                        'size_bin_num': size_bin,
-                                                        'values': snr_values
-                                                    })
-                                        
-                                        if len(plot_data) > 0:
-                                            fig_snr = go.Figure()
-                                            
-                                            for item in plot_data:
-                                                fig_snr.add_trace(go.Box(
-                                                    y=item['values'],
-                                                    name=item['size_bin'],
-                                                    boxmean='sd'
-                                                ))
-                                            
-                                            fig_snr.update_layout(
-                                                title=f'{channel} - {defect_type} ({casi_name} vs {kla_name})',
-                                                xaxis_title='尺寸区间',
-                                                yaxis_title=channel,
-                                                height=500,
-                                                showlegend=True
-                                            )
-                                            
-                                            st.plotly_chart(fig_snr, use_container_width=True)
-                                            
-                                            # 显示统计表格
-                                            stat_rows = []
-                                            for item in plot_data:
-                                                values = item['values']
-                                                stat_rows.append({
-                                                    '尺寸区间': item['size_bin'],
-                                                    '样本数': len(values),
-                                                    '均值': f"{np.mean(values):.2f}",
-                                                    '中位数': f"{np.median(values):.2f}",
-                                                    '标准差': f"{np.std(values):.2f}",
-                                                    '最小值': f"{np.min(values):.2f}",
-                                                    '最大值': f"{np.max(values):.2f}"
-                                                })
-                                            
-                                            stat_df = pd.DataFrame(stat_rows)
-                                            st.dataframe(stat_df, use_container_width=True)
-                                        else:
-                                            st.info(f"无{channel}数据")
-                                
-                                # 生成晶圆图：按尺寸区间显示过检和漏检分布
-                                st.write("#### 🗺️ 按尺寸区间的晶圆缺陷分布图")
-                                
-                                # 选择尺寸区间
-                                available_bins = []
-                                for size_bin in snr_stats['size_bins']:
-                                    total_count_over = snr_stats['过检'].get(size_bin, {}).get('count', 0)
-                                    total_count_correct = snr_stats['正确检出'].get(size_bin, {}).get('count', 0)
-                                    if total_count_over > 0 or total_count_correct > 0:
-                                        available_bins.append(size_bin)
-                                
-                                if len(available_bins) > 0:
-                                    # 使用expander来组织晶圆图，避免页面过长
-                                    with st.expander(f"🗺️ 查看晶圆缺陷分布图（共{len(available_bins)}个尺寸区间可选）", expanded=True):
-                                        st.info("💡 提示：下方默认显示前3个尺寸区间的晶圆图。如需查看更多，请展开对应的区间。")
-                                        
-                                        # 为每个可用的尺寸区间创建一个expander
-                                        for bin_idx, size_bin in enumerate(available_bins):
-                                            # 前3个默认展开，其余默认折叠
-                                            is_expanded = bin_idx < 3
-                                            
-                                            with st.expander(f"📍 尺寸区间：{size_bin}-{size_bin+2}nm", expanded=is_expanded):
-                                                # 收集该尺寸区间的过检和正确检出数据
-                                                over_coords = snr_stats['过检'].get(size_bin, {}).get('coords', [])
-                                                correct_coords = snr_stats['正确检出'].get(size_bin, {}).get('coords', [])
-                                                
-                                                if len(over_coords) == 0 and len(correct_coords) == 0:
-                                                    st.info(f"该尺寸区间无数据")
-                                                    continue
-                                                
-                                                # 创建晶圆图
-                                                fig_wafer = go.Figure()
-                                                
-                                                # 添加晶圆边缘圆形（以150000, 150000为中心）
-                                                wafer_center_x = 150000
-                                                wafer_center_y = 150000
-                                                wafer_radius = 150000  # 晶圆半径
-                                                
-                                                # 生成圆形轮廓点
-                                                theta = np.linspace(0, 2*np.pi, 100)
-                                                circle_x = wafer_center_x + wafer_radius * np.cos(theta)
-                                                circle_y = wafer_center_y + wafer_radius * np.sin(theta)
-                                                
-                                                fig_wafer.add_trace(go.Scatter(
-                                                    x=circle_x,
-                                                    y=circle_y,
-                                                    mode='lines',
-                                                    name='晶圆边缘',
-                                                    line=dict(color='gray', width=2, dash='dash'),
-                                                    hoverinfo='skip',
-                                                    showlegend=True
-                                                ))
-                                                
-                                                # 添加过检点
-                                                if len(over_coords) > 0:
-                                                    x_over = [c['x'] for c in over_coords]
-                                                    y_over = [c['y'] for c in over_coords]
-                                                    hover_text_over = [
-                                                        f"过检<br>X: {c['x']:.1f}<br>Y: {c['y']:.1f}<br>" +
-                                                        f"DW1O_Size: {c['dw1o_size']:.1f}<br>" +
-                                                        f"DW2O_Size: {c['dw2o_size']:.1f}<br>" +
-                                                        f"DN1O_Size: {c['dn1o_size']:.1f}<br>" +
-                                                        f"DW1O_SNR: {c.get('dw1o_snr', 0):.2f}<br>" +
-                                                        f"DW2O_SNR: {c.get('dw2o_snr', 0):.2f}<br>" +
-                                                        f"DN1O_SNR: {c.get('dn1o_snr', 0):.2f}"
-                                                        for c in over_coords
-                                                    ]
-                                                    
-                                                    fig_wafer.add_trace(go.Scatter(
-                                                        x=x_over,
-                                                        y=y_over,
-                                                        mode='markers',
-                                                        name=f'过检 (n={len(over_coords)})',
-                                                        marker=dict(size=8, color='red', opacity=0.6),
-                                                        text=hover_text_over,
-                                                        hovertemplate='%{text}<extra></extra>'
-                                                    ))
-                                                
-                                                # 添加正确检出点
-                                                if len(correct_coords) > 0:
-                                                    x_correct = [c['x'] for c in correct_coords]
-                                                    y_correct = [c['y'] for c in correct_coords]
-                                                    hover_text_correct = [
-                                                        f"正确检出<br>X: {c['x']:.1f}<br>Y: {c['y']:.1f}<br>" +
-                                                        f"DW1O_Size: {c['dw1o_size']:.1f}<br>" +
-                                                        f"DW2O_Size: {c['dw2o_size']:.1f}<br>" +
-                                                        f"DN1O_Size: {c['dn1o_size']:.1f}<br>" +
-                                                        f"DW1O_SNR: {c.get('dw1o_snr', 0):.2f}<br>" +
-                                                        f"DW2O_SNR: {c.get('dw2o_snr', 0):.2f}<br>" +
-                                                        f"DN1O_SNR: {c.get('dn1o_snr', 0):.2f}"
-                                                        for c in correct_coords
-                                                    ]
-                                                    
-                                                    fig_wafer.add_trace(go.Scatter(
-                                                        x=x_correct,
-                                                        y=y_correct,
-                                                        mode='markers',
-                                                        name=f'正确检出 (n={len(correct_coords)})',
-                                                        marker=dict(size=8, color='green', opacity=0.6),
-                                                        text=hover_text_correct,
-                                                        hovertemplate='%{text}<extra></extra>'
-                                                    ))
-                                                
-                                                fig_wafer.update_layout(
-                                                    title=f'晶圆缺陷分布图 - 尺寸 {size_bin}-{size_bin+2}nm<br>{casi_name} vs {kla_name}',
-                                                    xaxis_title='X坐标 (dCenterXCartisian)',
-                                                    yaxis_title='Y坐标 (dCenterYCartisian)',
-                                                    height=600,
-                                                    hovermode='closest',
-                                                    showlegend=True,
-                                                    xaxis=dict(scaleanchor="y", scaleratio=1),
-                                                    yaxis=dict(scaleanchor="x", scaleratio=1)
-                                                )
-                                                
-                                                st.plotly_chart(fig_wafer, use_container_width=True)
-                                                
-                                                # 显示统计信息
-                                                col1, col2 = st.columns(2)
-                                                with col1:
-                                                    st.metric("过检数量", len(over_coords))
-                                                with col2:
-                                                    st.metric("正确检出数量", len(correct_coords))
-                                else:
-                                    st.info("没有可用的尺寸区间数据")
-                                
-                                st.write("---")
-                        else:
-                            st.info("未找到TotalSNR和Size列，无法进行SNR按尺寸分布分析")
-                    
-                    else:
-                        st.warning("未生成匹配结果")
-                        
+                                                                            
             except Exception as e:
                 st.error(f"KLA匹配分析时出错: {str(e)}")
                 st.exception(e)
@@ -5300,27 +6150,27 @@ with tab1:
     st.markdown('<a name="共有率分析"></a>', unsafe_allow_html=True)
     st.header("🔍 CASI缺陷坐标共有率分析")
     
-    st.markdown("""
-    ### 功能说明
-    基于CASI与KLA匹配分析结果，分析多个子文件夹间CASI缺陷的位置一致性（共有率）。
-    
-    **重要说明：**
-    - **前置条件：** 需要先执行"CASI与KLA匹配分析"
-    - **分析对象：** 仅分析CASI数据（有nDefectID），不包括KLA漏检数据
-    - **匹配范围：** 200nm（可调整）
-    - **匹配类型：** 按过检、正确检出、漏检分别统计
-    - **统计方式：** 计算每个位置在多个文件夹中的出现次数
-    
-    **分析内容：**
-    1. 各子文件夹过检/正确检出/漏检的位置重叠情况（CASI数据）
-    2. 共有的位置占各子文件夹的百分比
-    3. 可视化展示共有位置分布
-    4. 导出nDefectID对应关系及完整特征数据
-    
-    **数据过滤：**
-    - ✅ 包含：所有有nDefectID的CASI缺陷数据
-    - ❌ 排除：KLA漏检数据（无nDefectID，无法进行特征对比）
-    """)
+    with st.expander("ℹ️ 功能说明", expanded=False):
+        st.markdown("""
+        基于CASI与KLA匹配分析结果，分析多个子文件夹间CASI缺陷的位置一致性（共有率）。
+        
+        **重要说明：**
+        - **前置条件：** 需要先执行"CASI与KLA匹配分析"
+        - **分析对象：** 仅分析CASI数据（有nDefectID），不包括KLA漏检数据
+        - **匹配范围：** 200nm（可调整）
+        - **匹配类型：** 按过检、正确检出、漏检分别统计
+        - **统计方式：** 计算每个位置在多个文件夹中的出现次数
+        
+        **分析内容：**
+        1. 各子文件夹过检/正确检出/漏检的位置重叠情况（CASI数据）
+        2. 共有的位置占各子文件夹的百分比
+        3. 可视化展示共有位置分布
+        4. 导出nDefectID对应关系及完整特征数据
+        
+        **数据过滤：**
+        - ✅ 包含：所有有nDefectID的CASI缺陷数据
+        - ❌ 排除：KLA漏检数据（无nDefectID，无法进行特征对比）
+        """)
     
     # 检查是否有匹配结果数据
     if 'kla_match_results' not in st.session_state or not st.session_state.kla_match_results:
@@ -5604,7 +6454,7 @@ with tab1:
                                     data=csv_correspondence,
                                     file_name=f"{defect_type}_共有缺陷_nDefectID及特征数据_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                                     mime="text/csv",
-                                    key=f"download_defectid_{defect_type}_csv",
+                                    key=f"download_correspondence_{defect_type}",
                                     help=f"下载包含{len(correspondence_df)}行数据和{len(correspondence_df.columns)}列的完整特征数据表"
                                 )
                             else:
@@ -5824,7 +6674,7 @@ with tab1:
                                     data=csv_non_shared,
                                     file_name=f"{defect_type}_不共有缺陷_跨文件夹对比_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                                     mime="text/csv",
-                                    key=f"download_non_shared_{defect_type}_csv",
+                                    key=f"download_non_shared_{defect_type}",
                                     help=f"下载包含{len(non_shared_df)}个不共有缺陷及其在其他文件夹中对应位置的完整特征数据"
                                 )
                                 
@@ -6014,7 +6864,7 @@ with tab1:
                                 data=csv_export,
                                 file_name=f"{defect_type}_共有位置基础数据_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                                 mime="text/csv",
-                                key=f"download_{defect_type}_csv",
+                                key=f"download_shared_base_{defect_type}",
                                 help=f"下载包含位置坐标和出现次数的基础数据（不含详细特征）"
                             )
                         else:
@@ -6025,45 +6875,439 @@ with tab1:
                 st.exception(e)
 
 
+with tab4:
+    st.markdown('<a name="图像查看"></a>', unsafe_allow_html=True)
+    st.header("🖼️ TIFF图像查看器")
+    
+    # 文件夹选择
+    folder_path = st.text_input("请输入包含TIFF图像的文件夹路径", 
+                               placeholder="例如: D:/images/tiff_folder")
+    
+    if folder_path:
+        try:
+            if Image is None:
+                st.error("请安装PIL库: pip install Pillow")
+                st.stop()
+            
+            # 检查文件夹是否存在
+            if not os.path.exists(folder_path):
+                st.error("文件夹路径不存在，请检查路径是否正确")
+            else:
+                # 搜索TIFF文件
+                tiff_patterns = [
+                    os.path.join(folder_path, "*-DN1O.tiff"),
+                    os.path.join(folder_path, "*-DN1O.TIFF"),
+                    os.path.join(folder_path, "*-DW1O.tiff"), 
+                    os.path.join(folder_path, "*-DW1O.TIFF"),
+                    os.path.join(folder_path, "*-DW2O.tiff"),
+                    os.path.join(folder_path, "*-DW2O.TIFF")
+                ]
+                
+                all_files = []
+                for pattern in tiff_patterns:
+                    all_files.extend(glob.glob(pattern))
+                
+                if not all_files:
+                    st.warning("在指定文件夹中未找到符合格式的TIFF文件")
+                    st.info("文件格式应为: ID-DN1O.tiff, ID-DW1O.tiff, ID-DW2O.tiff")
+                else:
+                    st.success(f"找到 {len(all_files)} 个TIFF文件")
+                    
+                    # 解析文件并按ID分组
+                    @st.cache_data
+                    def parse_tiff_files(file_list):
+                        file_groups = {}
+                        
+                        for file_path in file_list:
+                            filename = os.path.basename(file_path)
+                            
+                            # 解析文件名格式：ID-通道.tiff
+                            if '-DN1O.' in filename.upper():
+                                channel = 'DN1O'
+                                file_id = filename.split('-DN1O.')[0]
+                            elif '-DW1O.' in filename.upper():
+                                channel = 'DW1O'
+                                file_id = filename.split('-DW1O.')[0]
+                            elif '-DW2O.' in filename.upper():
+                                channel = 'DW2O'
+                                file_id = filename.split('-DW2O.')[0]
+                            else:
+                                continue
+                            
+                            if file_id not in file_groups:
+                                file_groups[file_id] = {}
+                            
+                            file_groups[file_id][channel] = file_path
+                        
+                        return file_groups
+                    
+                    file_groups = parse_tiff_files(all_files)
+                    
+                    # 显示文件统计
+                    st.subheader("文件统计")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("总ID数量", len(file_groups))
+                    with col2:
+                        dn1o_count = sum(1 for group in file_groups.values() if 'DN1O' in group)
+                        st.metric("DN1O图像", dn1o_count)
+                    with col3:
+                        dw1o_count = sum(1 for group in file_groups.values() if 'DW1O' in group)
+                        st.metric("DW1O图像", dw1o_count)
+                    with col4:
+                        dw2o_count = sum(1 for group in file_groups.values() if 'DW2O' in group)
+                        st.metric("DW2O图像", dw2o_count)
+                    
+                    # 按ID排序（数字排序）
+                    sorted_ids = sorted(file_groups.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
+                    
+                    # 初始化session state
+                    if 'current_id_index' not in st.session_state:
+                        st.session_state.current_id_index = 0
+                    if 'folder_path' not in st.session_state:
+                        st.session_state.folder_path = folder_path
+                    
+                    # 如果文件夹路径改变，重置索引
+                    if st.session_state.folder_path != folder_path:
+                        st.session_state.current_id_index = 0
+                        st.session_state.folder_path = folder_path
+                    
+                    # 确保索引在有效范围内
+                    if st.session_state.current_id_index >= len(sorted_ids):
+                        st.session_state.current_id_index = len(sorted_ids) - 1 if sorted_ids else 0
+                    elif st.session_state.current_id_index < 0:
+                        st.session_state.current_id_index = 0
+                    
+                    # ID选择和导航
+                    st.subheader("批量浏览控制")
+                    
+                    # 导航按钮 - 使用表单来确保按钮点击被正确处理
+                    with st.form("navigation_form", clear_on_submit=False):
+                        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
+                        
+                        with col1:
+                            first_btn = st.form_submit_button("⏮️ 第一个")
+                        
+                        with col2:
+                            prev_disabled = st.session_state.current_id_index <= 0
+                            prev_btn = st.form_submit_button("⬅️ 上一个", disabled=prev_disabled)
+                        
+                        with col3:
+                            next_disabled = st.session_state.current_id_index >= len(sorted_ids) - 1
+                            next_btn = st.form_submit_button("➡️ 下一个", disabled=next_disabled)
+                        
+                        with col4:
+                            last_btn = st.form_submit_button("⏭️ 最后一个")
+                        
+                        with col5:
+                            # 进度条和当前状态
+                            if sorted_ids:
+                                progress = (st.session_state.current_id_index + 1) / len(sorted_ids)
+                                st.progress(progress)
+                                current_id = sorted_ids[st.session_state.current_id_index]
+                                st.write(f"**{st.session_state.current_id_index + 1} / {len(sorted_ids)}** (ID: {current_id})")
+                    
+                    # 处理按钮点击
+                    if first_btn:
+                        st.session_state.current_id_index = 0
+                        st.rerun()
+                    elif prev_btn and not prev_disabled:
+                        st.session_state.current_id_index = max(0, st.session_state.current_id_index - 1)
+                        st.rerun()
+                    elif next_btn and not next_disabled:
+                        st.session_state.current_id_index = min(len(sorted_ids) - 1, st.session_state.current_id_index + 1)
+                        st.rerun()
+                    elif last_btn:
+                        st.session_state.current_id_index = len(sorted_ids) - 1
+                        st.rerun()
+                    
+                    
+                    # ID选择下拉框
+                    # st.subheader("选择特定ID")
+                    # col1, col2 = st.columns([3, 1])
+                    # with col1:
+                    #     # 创建ID选择框
+                    #     selected_index = st.selectbox(
+                    #         "跳转到特定ID", 
+                    #         range(len(sorted_ids)),
+                    #         index=st.session_state.current_id_index,
+                    #         format_func=lambda x: f"ID: {sorted_ids[x]}",
+                    #         key="id_selectbox",
+                    #         help="直接选择要查看的ID"
+                    #     )
+                        
+                        # 如果选择框的值改变了，更新session state
+                        # if selected_index != st.session_state.current_id_index:
+                        #     st.session_state.current_id_index = selected_index
+                        #     st.rerun()
+                    
+                    with col2:
+                        auto_enhance = st.checkbox("自动增强显示", value=True, help="自动调整16位图像的显示对比度")
+                    
+                    # 当前选择的ID
+                    selected_id = sorted_ids[st.session_state.current_id_index] if sorted_ids else None
+                    
+                    # 高级显示选项
+                    with st.expander("高级显示选项"):
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            percentile_low = st.slider("对比度下限百分位", 0.0, 5.0, 1.0, 0.1, help="用于对比度拉伸的下限百分位")
+                        with col2:
+                            percentile_high = st.slider("对比度上限百分位", 95.0, 100.0, 100.0, 0.1, help="用于对比度拉伸的上限百分位")
+                        with col3:
+                            gamma_value = st.slider("伽马校正", 0.1, 3.0, 1.1, 0.1, help="调整图像亮度和对比度")
+                    
+                    if selected_id and selected_id in file_groups:
+                        st.subheader(f"ID: {selected_id} 的图像")
+                        
+                        # 获取该ID的所有通道图像
+                        channels = ['DN1O', 'DW1O', 'DW2O']
+                        available_channels = [ch for ch in channels if ch in file_groups[selected_id]]
+                        
+                        if available_channels:
+                            # 显示图像信息
+                            with st.expander("图像信息"):
+                                for channel in available_channels:
+                                    file_path = file_groups[selected_id][channel]
+                                    st.write(f"**{channel}**: {os.path.basename(file_path)}")
+                            
+                            # 读取和显示图像
+                            def load_and_process_16bit_tiff(file_path, enhance=True, p_low=1.0, p_high=99.0, gamma=1.0):
+                                """加载16位TIFF图像并处理为可显示的格式（类似ImageJ）"""
+                                try:
+                                    # 使用PIL读取16位TIFF
+                                    img = Image.open(file_path)
+                                    
+                                    # 转换为numpy数组
+                                    img_array = np.array(img, dtype=np.float64)  # 使用float64保持精度
+                                    
+                                    if enhance:
+                                        # 使用用户指定的百分位数进行对比度调整
+                                        p_low_val, p_high_val = np.percentile(img_array, (p_low, p_high))
+                                        
+                                        # 如果上下限相同，使用min和max
+                                        if p_high_val - p_low_val == 0:
+                                            p_low_val, p_high_val = img_array.min(), img_array.max()
+                                        
+                                        if p_high_val - p_low_val > 0:
+                                            # 对比度拉伸
+                                            img_normalized = (img_array - p_low_val) / (p_high_val - p_low_val)
+                                            img_normalized = np.clip(img_normalized, 0, 1)
+                                        else:
+                                            img_normalized = img_array / img_array.max() if img_array.max() > 0 else img_array
+                                        
+                                        # 应用用户指定的伽马校正
+                                        if gamma != 1.0:
+                                            img_normalized = np.power(img_normalized, 1.0/gamma)  # 注意伽马的倒数
+                                        
+                                        # 转换为8位
+                                        img_enhanced = (img_normalized * 255).astype(np.uint8)
+                                    else:
+                                        # 简单的线性缩放，保持16位到8位的线性关系
+                                        max_val = img_array.max()
+                                        if max_val > 0:
+                                            if max_val <= 255:
+                                                img_enhanced = img_array.astype(np.uint8)
+                                            else:
+                                                # 16位到8位的线性映射
+                                                img_enhanced = (img_array / 65535.0 * 255).astype(np.uint8)
+                                        else:
+                                            img_enhanced = img_array.astype(np.uint8)
+                                    
+                                    # 返回处理后的图像、原始数组（用于统计）、形状和统计信息
+                                    return img_enhanced, img_array.shape, (img_array.min(), img_array.max(), img_array.mean()), p_low_val if enhance else None, p_high_val if enhance else None
+                                
+                                except Exception as e:
+                                    st.error(f"读取图像失败: {str(e)}")
+                                    return None, None, None, None, None
+                            
+                            # 创建列布局显示图像
+                            if len(available_channels) == 1:
+                                # 单张图像
+                                channel = available_channels[0]
+                                file_path = file_groups[selected_id][channel]
+                                
+                                result = load_and_process_16bit_tiff(file_path, auto_enhance, percentile_low, percentile_high, gamma_value)
+                                img_processed, img_shape, img_stats, p_low_val, p_high_val = result
+                                
+                                if img_processed is not None:
+                                    st.write(f"**{channel} 通道**")
+                                    caption = f"{channel} - 形状: {img_shape}"
+                                    if auto_enhance and p_low_val is not None:
+                                        caption += f", 显示范围: {p_low_val:.0f}-{p_high_val:.0f}"
+                                    caption += f", 原始范围: {img_stats[0]:.0f}-{img_stats[1]:.0f}, 平均值: {img_stats[2]:.1f}"
+                                    st.image(img_processed, caption=caption)
+                            
+                            elif len(available_channels) == 2:
+                                # 两张图像
+                                col1, col2 = st.columns(2)
+                                
+                                for i, channel in enumerate(available_channels):
+                                    file_path = file_groups[selected_id][channel]
+                                    result = load_and_process_16bit_tiff(file_path, auto_enhance, percentile_low, percentile_high, gamma_value)
+                                    img_processed, img_shape, img_stats, p_low_val, p_high_val = result
+                                    
+                                    if img_processed is not None:
+                                        with [col1, col2][i]:
+                                            st.write(f"**{channel} 通道**")
+                                            st.image(img_processed, caption=f"{channel}")
+                                            with st.expander(f"{channel} 详细信息"):
+                                                st.write(f"图像尺寸: {img_shape}")
+                                                st.write(f"原始值范围: {img_stats[0]:.0f} - {img_stats[1]:.0f}")
+                                                st.write(f"平均值: {img_stats[2]:.1f}")
+                                                if auto_enhance and p_low_val is not None:
+                                                    st.write(f"显示范围: {p_low_val:.0f} - {p_high_val:.0f}")
+                                                    st.write(f"对比度拉伸: {percentile_low}% - {percentile_high}%")
+                            
+                            else:
+                                # 三张图像（标准情况）
+                                col1, col2, col3 = st.columns(3)
+                                columns = [col1, col2, col3]
+                                
+                                for i, channel in enumerate(available_channels):
+                                    file_path = file_groups[selected_id][channel]
+                                    result = load_and_process_16bit_tiff(file_path, auto_enhance, percentile_low, percentile_high, gamma_value)
+                                    img_processed, img_shape, img_stats, p_low_val, p_high_val = result
+                                    
+                                    if img_processed is not None:
+                                        with columns[i]:
+                                            st.write(f"**{channel} 通道**")
+                                            st.image(img_processed, caption=f"{channel}")
+                                            with st.expander(f"{channel} 详细信息"):
+                                                st.write(f"图像尺寸: {img_shape}")
+                                                st.write(f"原始值范围: {img_stats[0]:.0f} - {img_stats[1]:.0f}")
+                                                st.write(f"平均值: {img_stats[2]:.1f}")
+                                                if auto_enhance and p_low_val is not None:
+                                                    st.write(f"显示范围: {p_low_val:.0f} - {p_high_val:.0f}")
+                                                    st.write(f"伽马校正: {gamma_value}")
+                                                    st.write(f"对比度百分位: {percentile_low}% - {percentile_high}%")
+                            
+
+                            
+                            # 使用提示
+                            st.caption("💡 提示：使用上方的导航按钮或快速跳转功能切换图像")
+                        
+                        else:
+                            st.warning(f"ID {selected_id} 没有找到任何通道的图像")
+                    
+                    # 显示所有ID的概览
+                    with st.expander("所有ID概览"):
+                        st.write("可用的ID和对应的通道:")
+                        
+                        overview_data = []
+                        for file_id in sorted_ids:
+                            channels_available = list(file_groups[file_id].keys())
+                            overview_data.append({
+                                'ID': file_id,
+                                'DN1O': '✓' if 'DN1O' in channels_available else '✗',
+                                'DW1O': '✓' if 'DW1O' in channels_available else '✗',
+                                'DW2O': '✓' if 'DW2O' in channels_available else '✗',
+                                '文件数': len(channels_available)
+                            })
+                        
+                        overview_df = pd.DataFrame(overview_data)
+                        st.dataframe(overview_df, use_container_width=True)
+
+    # 快速跳转功能
+                    st.subheader("快速跳转")
+                    # 先获取跳转步长
+                    jump_step = st.number_input("跳转步长", min_value=1, max_value=10, value=5, key="jump_step_input")
+                    
+                    # 使用按钮进行跳转（不用表单，直接用按钮）
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.write(f"当前显示: ID {sorted_ids[st.session_state.current_id_index] if sorted_ids else 'None'}")
+                    
+                    with col2:
+                        if st.button(f"⏪ 后退 {jump_step} 个", key="jump_back_btn"):
+                            new_index = max(0, st.session_state.current_id_index - jump_step)
+                            st.session_state.current_id_index = new_index
+                            st.rerun()
+                    
+                    with col3:
+                        if st.button(f"⏩ 前进 {jump_step} 个", key="jump_forward_btn"):
+                            new_index = min(len(sorted_ids) - 1, st.session_state.current_id_index + jump_step)
+                            st.session_state.current_id_index = new_index
+                            st.rerun()
+                    
+        
+        except ImportError as e:
+            st.error("缺少必要的库，请安装: pip install Pillow")
+        except Exception as e:
+            st.error(f"处理文件夹时出错: {str(e)}")
+    
+    else:
+        st.info("请输入文件夹路径开始查看TIFF图像")
+        st.markdown("""
+        ### TIFF图像查看器使用说明：
+        
+        1. **文件格式要求**：
+           - 文件命名格式：`ID-通道.tiff` 或 `ID-通道.TIFF`
+           - 支持的通道：DN1O, DW1O, DW2O
+           - 例如：`1-DN1O.tiff`, `1-DW1O.tiff`, `1-DW2O.tiff`
+        
+        2. **功能特点**：
+           - 自动检测文件夹中所有符合格式的TIFF文件
+           - 按ID分组显示，一行显示三个通道
+           - 支持16位TIFF图像的正确显示
+           - 自动增强对比度，优化显示效果
+           - 批量浏览功能，快速切换不同ID
+        
+        3. **16位图像处理**：
+           - 自动进行对比度拉伸（2%-98%分位数）
+           - 显示原始数值范围和统计信息
+           - 可选择开启/关闭自动增强
+        
+        4. **浏览功能**：
+           - ID选择下拉框
+           - 上一个/下一个ID快速切换
+           - 所有ID概览表格
+           - 详细的图像信息显示
+        """)
+
+
 # Tab3: 区域过滤
-with tab3:
+with tab5:
     st.markdown('<a name="区域过滤"></a>', unsafe_allow_html=True)
     st.header("✂️ 区域过滤 - 删除指定区域内的缺陷点")
     
-    st.markdown("""
-    ### 功能说明：
-    1. 选择包含子文件夹的父文件夹
-    2. 自动读取每个子文件夹内的 `BlobFeatures*.csv` 文件
-    3. 支持**多边形框选**和矩形框选两种方式
-    4. 生成去除区域内点的新CSV文件
-    5. **可下载被删除的点**的CSV文件（新增）
-    
-    ### 操作步骤：
-    **多边形框选（推荐）：**
-    1. 输入文件夹路径，选择子文件夹
-    2. 依次输入多个顶点的X、Y坐标，点击"➕ 添加顶点"
-    3. 至少添加3个顶点形成多边形（绿色显示预览）
-    4. 点击"🗑️ 删除多边形内"应用过滤
-    5. 可以继续添加新的多边形区域
-    
-    **矩形框选（快捷方式）：**
-    1. 直接输入X/Y的最小值和最大值
-    2. 点击"🗑️ 删除矩形区域内"
-    
-    **导出功能：**
-    - 💾 下载保留的点（过滤后的数据）
-    - 💾 下载被删除的点（方便检查删除的数据）
-    
-    **图例说明：**
-    - 🔵 蓝色点：当前保留的缺陷点
-    - ❌ 红色×：已删除的缺陷点
-    - 🟢 绿色：正在绘制的多边形（虚线为预览）
-    - 🔴 红色虚线：已应用的删除区域
-    """)
+    with st.expander("ℹ️ 功能说明", expanded=False):
+        st.markdown("""
+        ### 功能概述
+        1. 选择包含子文件夹的父文件夹
+        2. 自动读取每个子文件夹内的 `BlobFeatures*.csv` 文件
+        3. 支持**多边形框选**和矩形框选两种方式
+        4. 生成去除区域内点的新CSV文件
+        5. **可下载被删除的点**的CSV文件（新增）
+        
+        ### 操作步骤
+        **多边形框选（推荐）：**
+        1. 输入文件夹路径，选择子文件夹
+        2. 依次输入多个顶点的X、Y坐标，点击"➕ 添加顶点"
+        3. 至少添加3个顶点形成多边形（绿色显示预览）
+        4. 点击"🗑️ 删除多边形内"应用过滤
+        5. 可以继续添加新的多边形区域
+        
+        **矩形框选（快捷方式）：**
+        1. 直接输入X/Y的最小值和最大值
+        2. 点击"🗑️ 删除矩形区域内"
+        
+        ### 导出功能
+        - 💾 下载保留的点（过滤后的数据）
+        - 💾 下载被删除的点（方便检查删除的数据）
+        
+        ### 图例说明
+        - 🔵 蓝色点：当前保留的缺陷点
+        - ❌ 红色×：已删除的缺陷点
+        - 🟢 绿色：正在绘制的多边形（虚线为预览）
+        - 🔴 红色虚线：已应用的删除区域
+        """)
     
     # 文件夹选择
     filter_folder = st.text_input("📁 输入父文件夹路径", 
-                                  value=r"D:\waferdata",
+                                  value=r"D:\hazemap\ClassifyData",
                                   key="filter_folder_input")
     
     if filter_folder and os.path.exists(filter_folder):
@@ -8307,444 +9551,3 @@ with tab3:
             st.pyplot(fig)
             plt.close()
 
-with tab4:
-    st.markdown('<a name="规则编辑器"></a>', unsafe_allow_html=True)
-    st.header("⚙️ 分类规则编辑器")
-    
-    import json
-    import rule_engine
-    
-    # 规则文件路径
-    default_rules_path = "classification_rules.json"
-    
-    st.subheader("📂 规则文件管理")
-    
-    # 添加加载方式选择
-    load_method = st.radio(
-        "选择加载方式",
-        ["📁 从文件路径加载", "📤 上传JSON文件"],
-        horizontal=True
-    )
-    
-    rules_file_path = None
-    load_button = False
-    uploaded_rules = None
-    
-    if load_method == "📁 从文件路径加载":
-        col1, col2, col3 = st.columns([3, 1, 1])
-        with col1:
-            rules_file_path = st.text_input("规则文件路径", value=default_rules_path, key="rules_path_input")
-        with col2:
-            st.write("")
-            st.write("")
-            load_button = st.button("🔄 加载规则", key="load_from_path")
-        with col3:
-            st.write("")
-            st.write("")
-            # 文件浏览器按钮提示
-            if st.button("💡 提示", key="path_help"):
-                st.info("💡 在文本框中输入完整的文件路径，例如：\n\n`D:/streamlit/classification_rules.json`\n\n或使用相对路径：\n\n`classification_rules.json`")
-    
-    else:  # 上传JSON文件
-        uploaded_file = st.file_uploader(
-            "选择JSON规则文件",
-            type=['json'],
-            help="上传classification_rules.json文件",
-            key="json_uploader"
-        )
-        
-        if uploaded_file is not None:
-            try:
-                # 读取上传的文件内容
-                uploaded_rules = json.load(uploaded_file)
-                st.success(f"✅ 文件 '{uploaded_file.name}' 上传成功")
-                
-                # 显示预览
-                with st.expander("📄 文件预览"):
-                    st.json(uploaded_rules)
-                
-                # 加载按钮
-                if st.button("✔️ 确认加载此文件", type="primary", key="load_uploaded"):
-                    load_button = True
-            except json.JSONDecodeError as e:
-                st.error(f"❌ JSON文件格式错误: {str(e)}")
-            except Exception as e:
-                st.error(f"❌ 读取文件失败: {str(e)}")
-    
-    # 初始化session state
-    if 'rules_config' not in st.session_state:
-        # 首次加载，尝试加载默认文件
-        try:
-            rules_config = rule_engine.load_rules_from_json(default_rules_path)
-            if rules_config:
-                st.session_state.rules_config = rules_config
-                st.session_state.current_rules_source = default_rules_path
-                st.info(f"ℹ️ 已自动加载默认规则文件：{default_rules_path}")
-            else:
-                st.warning("⚠️ 未找到默认规则文件，请加载或上传规则文件")
-                st.stop()
-        except:
-            st.warning("⚠️ 未找到默认规则文件，请加载或上传规则文件")
-            st.stop()
-    
-    # 处理加载操作
-    if load_button:
-        if load_method == "📁 从文件路径加载" and rules_file_path:
-            rules_config = rule_engine.load_rules_from_json(rules_file_path)
-            if rules_config:
-                st.session_state.rules_config = rules_config
-                st.session_state.current_rules_source = rules_file_path
-                st.success(f"✅ 成功加载规则文件：{rules_file_path}")
-                st.rerun()
-            else:
-                st.error(f"❌ 加载规则文件失败：{rules_file_path}")
-                st.error("请检查文件路径是否正确，文件是否存在")
-                st.stop()
-        elif load_method == "📤 上传JSON文件" and uploaded_rules:
-            st.session_state.rules_config = uploaded_rules
-            st.session_state.current_rules_source = uploaded_file.name
-            st.success(f"✅ 成功加载上传的规则文件：{uploaded_file.name}")
-            st.rerun()
-    
-    rules_config = st.session_state.rules_config
-    
-    # 显示当前加载的规则来源
-    current_source = st.session_state.get('current_rules_source', '未知')
-    st.caption(f"📌 当前规则来源: `{current_source}`")
-    
-    # 显示规则文件信息
-    st.subheader("📋 规则配置信息")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("规则版本", rules_config.get('version', 'N/A'))
-    with col2:
-        st.metric("规则数量", len(rules_config.get('rules', [])))
-    with col3:
-        enabled_count = sum(1 for r in rules_config.get('rules', []) if r.get('enabled', True))
-        st.metric("已启用规则", enabled_count)
-    
-    st.info(f"📝 描述: {rules_config.get('description', '无描述')}")
-    
-    # 阈值参数设置
-    st.subheader("🎛️ 全局阈值参数")
-    thresholds = rules_config.get('thresholds', {})
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        snr_adj = st.number_input("SNR调整值", 
-                                   value=float(thresholds.get('snr_adjustment', 0)),
-                                   step=0.5,
-                                   format="%.1f")
-        thresholds['snr_adjustment'] = snr_adj
-    with col2:
-        dw1o_adj = st.number_input("DW1O峰值调整", 
-                                     value=float(thresholds.get('dw1o_peak_adjustment', 0)),
-                                     step=100.0,
-                                     format="%.0f")
-        thresholds['dw1o_peak_adjustment'] = dw1o_adj
-    with col3:
-        dw2o_adj = st.number_input("DW2O峰值调整", 
-                                     value=float(thresholds.get('dw2o_peak_adjustment', 0)),
-                                     step=100.0,
-                                     format="%.0f")
-        thresholds['dw2o_peak_adjustment'] = dw2o_adj
-    
-    rules_config['thresholds'] = thresholds
-    
-    # 默认返回值设置
-    st.subheader("🔢 默认返回值")
-    default_return = st.number_input("当没有规则匹配时的返回值", 
-                                     value=int(rules_config.get('default_return', 10002)),
-                                     step=1)
-    rules_config['default_return'] = default_return
-    
-    st.markdown("---")
-    
-    # 规则列表编辑
-    st.subheader("📜 分类规则列表")
-    
-    # 添加新规则按钮
-    if st.button("➕ 添加新规则"):
-        new_rule = {
-            "rule_id": max([r.get('rule_id', 0) for r in rules_config['rules']], default=0) + 1,
-            "name": "新规则",
-            "conditions": [],
-            "logic": "AND",
-            "return_value": 0,
-            "enabled": True
-        }
-        rules_config['rules'].append(new_rule)
-        st.success("✅ 已添加新规则")
-        st.rerun()
-    
-    # 可用特征列表
-    available_features = rules_config.get('available_features', [])
-    operators = ['>', '>=', '<', '<=', '==', '!=']
-    
-    # 通道组合映射（内部值 -> 显示名称）
-    channel_combinations_map = {
-        '': '无限制',
-        'D_only': 'DW1O通道单独',
-        'J_only': 'DW2O通道单独',
-        'P_only': 'DN1O通道单独',
-        'D_and_J': 'DW1O+DW2O组合',
-        'D_and_P': 'DW1O+DN1O组合',
-        'J_and_P': 'DW2O+DN1O组合',
-        'D_and_J_and_P': 'DW1O+DW2O+DN1O全通道'
-    }
-    channel_combinations = list(channel_combinations_map.keys())
-    
-    # 显示每条规则
-    rules_to_delete = []
-    for idx, rule in enumerate(rules_config['rules']):
-        with st.expander(f"🔖 规则 {rule.get('rule_id', idx+1)}: {rule.get('name', '未命名')} {'✅' if rule.get('enabled', True) else '❌'}"):
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                rule['name'] = st.text_input("规则名称", value=rule.get('name', ''), key=f"name_{idx}")
-            
-            with col2:
-                rule['enabled'] = st.checkbox("启用", value=rule.get('enabled', True), key=f"enabled_{idx}")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                rule['rule_id'] = st.number_input("规则ID", value=int(rule.get('rule_id', idx+1)), 
-                                                  step=1, key=f"id_{idx}")
-            with col2:
-                rule['return_value'] = st.number_input("返回值", value=int(rule.get('return_value', 0)), 
-                                                       step=1, key=f"return_{idx}")
-            with col3:
-                # 选择逻辑模式
-                use_complex_logic = st.checkbox("使用复杂逻辑表达式", 
-                                               value='logic_expression' in rule,
-                                               key=f"complex_{idx}",
-                                               help="启用后可以使用 &&、||、! 和括号组合条件")
-            
-            # 通道组合（可选）
-            current_combination = rule.get('channel_combination', '')
-            combination_index = channel_combinations.index(current_combination) if current_combination in channel_combinations else 0
-            
-            # 使用中文显示名称
-            selected_display = st.selectbox(
-                "通道组合限制（可选）", 
-                options=channel_combinations,
-                format_func=lambda x: channel_combinations_map.get(x, x),
-                index=combination_index,
-                key=f"channel_{idx}",
-                help="限制规则仅在特定通道组合下生效"
-            )
-            
-            if selected_display:
-                rule['channel_combination'] = selected_display
-            elif 'channel_combination' in rule:
-                del rule['channel_combination']
-            
-            # 逻辑设置
-            if use_complex_logic:
-                # 使用复杂逻辑表达式
-                st.info("💡 复杂逻辑表达式说明：使用条件ID组合，支持 && (AND)、|| (OR)、! (NOT) 和括号")
-                st.markdown("""
-                **示例**：
-                - `1 && 2` : 条件1 AND 条件2
-                - `1 || 2 || 3` : 条件1 OR 条件2 OR 条件3
-                - `1 && (2 || 3)` : 条件1 AND (条件2 OR 条件3)
-                - `(1 || 2) && !3` : (条件1 OR 条件2) AND NOT 条件3
-                - `1 && (2 || 3 || 4) && (!5)` : 条件1 AND (条件2 OR 条件3 OR 条件4) AND (NOT 条件5)
-                """)
-                
-                current_expression = rule.get('logic_expression', '')
-                rule['logic_expression'] = st.text_input(
-                    "逻辑表达式", 
-                    value=current_expression,
-                    key=f"logic_expr_{idx}",
-                    placeholder="例如: 1 && (2 || 3) && (!4)"
-                )
-                
-                # 删除简单逻辑字段
-                if 'logic' in rule:
-                    del rule['logic']
-            else:
-                # 使用简单逻辑
-                rule['logic'] = st.selectbox("逻辑关系", ['AND', 'OR'], 
-                                            index=0 if rule.get('logic', 'AND') == 'AND' else 1,
-                                            key=f"logic_{idx}",
-                                            help="AND: 所有条件都满足, OR: 任一条件满足")
-                
-                # 删除复杂逻辑字段
-                if 'logic_expression' in rule:
-                    del rule['logic_expression']
-            
-            # 条件列表
-            st.write("**条件列表:**")
-            
-            conditions = rule.get('conditions', [])
-            conditions_to_delete = []
-            use_complex = 'logic_expression' in rule
-            
-            for cond_idx, condition in enumerate(conditions):
-                # 如果使用复杂逻辑，显示条件ID
-                if use_complex:
-                    col0, col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 1, 2, 1, 1])
-                    with col0:
-                        # 确保有condition_id
-                        if 'condition_id' not in condition:
-                            condition['condition_id'] = cond_idx + 1
-                        condition['condition_id'] = st.number_input("ID", 
-                                                                    value=int(condition.get('condition_id', cond_idx+1)),
-                                                                    min_value=1,
-                                                                    step=1,
-                                                                    key=f"cond_id_{idx}_{cond_idx}")
-                else:
-                    col1, col2, col3, col4, col5 = st.columns([3, 1, 2, 1, 1])
-                    # 移除condition_id（简单逻辑不需要）
-                    if 'condition_id' in condition:
-                        del condition['condition_id']
-                
-                with col1:
-                    feature_index = available_features.index(condition['feature']) if condition['feature'] in available_features else 0
-                    condition['feature'] = st.selectbox("特征", available_features, 
-                                                       index=feature_index,
-                                                       key=f"feat_{idx}_{cond_idx}")
-                
-                with col2:
-                    op_index = operators.index(condition['operator']) if condition['operator'] in operators else 0
-                    condition['operator'] = st.selectbox("操作符", operators, 
-                                                        index=op_index,
-                                                        key=f"op_{idx}_{cond_idx}")
-                
-                with col3:
-                    condition['value'] = st.number_input("值", value=float(condition['value']), 
-                                                        step=0.1,
-                                                        key=f"val_{idx}_{cond_idx}")
-                
-                with col4:
-                    condition['use_threshold'] = st.checkbox("使用阈值", 
-                                                            value=condition.get('use_threshold', False),
-                                                            key=f"thresh_{idx}_{cond_idx}")
-                
-                with col5:
-                    if st.button("🗑️", key=f"del_cond_{idx}_{cond_idx}"):
-                        conditions_to_delete.append(cond_idx)
-            
-            # 删除标记的条件
-            for cond_idx in sorted(conditions_to_delete, reverse=True):
-                conditions.pop(cond_idx)
-            
-            rule['conditions'] = conditions
-            
-            # 添加新条件按钮
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                if st.button("➕ 添加条件", key=f"add_cond_{idx}"):
-                    new_condition = {
-                        "feature": available_features[0] if available_features else "",
-                        "operator": ">",
-                        "value": 0,
-                        "use_threshold": False
-                    }
-                    # 如果使用复杂逻辑，添加condition_id
-                    if 'logic_expression' in rule:
-                        # 找到最大的condition_id
-                        max_id = max([c.get('condition_id', 0) for c in conditions], default=0)
-                        new_condition['condition_id'] = max_id + 1
-                    conditions.append(new_condition)
-                    st.rerun()
-            
-            with col2:
-                if st.button("❌ 删除此规则", key=f"del_rule_{idx}"):
-                    rules_to_delete.append(idx)
-                    st.rerun()
-    
-    # 删除标记的规则
-    for rule_idx in sorted(rules_to_delete, reverse=True):
-        rules_config['rules'].pop(rule_idx)
-    
-    st.markdown("---")
-    
-    # 保存按钮
-    st.subheader("💾 保存规则")
-    
-    # 保存方式选择
-    save_method = st.radio(
-        "选择保存方式",
-        ["💾 保存到文件路径", "⬇️ 下载JSON文件"],
-        horizontal=True,
-        key="save_method"
-    )
-    
-    if save_method == "💾 保存到文件路径":
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            # 获取默认保存路径
-            default_save_path = st.session_state.get('current_rules_source', default_rules_path)
-            if not default_save_path.endswith('.json'):
-                default_save_path = default_rules_path
-            
-            save_path = st.text_input(
-                "保存文件路径", 
-                value=default_save_path, 
-                key="save_path",
-                help="输入完整的文件路径，例如：D:/streamlit/my_rules.json"
-            )
-        
-        with col2:
-            st.write("")
-            st.write("")
-            if st.button("💾 保存", type="primary", key="save_to_file"):
-                st.session_state.rules_config = rules_config
-                if rule_engine.save_rules_to_json(rules_config, save_path):
-                    st.success(f"✅ 规则已成功保存到:\n`{save_path}`")
-                    st.session_state.current_rules_source = save_path
-                    st.balloons()
-                else:
-                    st.error("❌ 保存失败，请检查文件路径是否正确")
-        
-        st.info("💡 **提示**: 保存后，您可以在`离线过漏检.py`中使用此规则文件")
-    
-    else:  # 下载JSON文件
-        st.write("点击下方按钮下载规则文件到本地：")
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            download_filename = st.text_input(
-                "文件名", 
-                value="classification_rules_export.json",
-                key="download_filename",
-                help="设置下载的文件名"
-            )
-        
-        with col2:
-            st.write("")
-            st.write("")
-            # 生成JSON字符串
-            json_str = json.dumps(rules_config, ensure_ascii=False, indent=2)
-            st.download_button(
-                label="⬇️ 下载JSON",
-                data=json_str,
-                file_name=download_filename,
-                mime="application/json",
-                type="primary",
-                key="download_json"
-            )
-        
-        st.info("💡 **提示**: 下载后，您可以将文件放置到工作目录，然后在规则编辑器中重新加载")
-    
-    st.markdown("---")
-    
-    # 规则预览
-    st.subheader("👁️ 规则JSON预览")
-    
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        show_full_json = st.checkbox("显示完整JSON", value=False, key="show_full_json")
-    with col2:
-        if st.button("📋 复制JSON到剪贴板", key="copy_json_btn"):
-            st.code(json.dumps(rules_config, ensure_ascii=False, indent=2), language="json")
-            st.info("💡 请选中上方代码框的内容，然后按 Ctrl+C 复制")
-    
-    if show_full_json:
-        st.json(rules_config)
-    else:
-        with st.expander("点击展开查看完整JSON"):
-            st.json(rules_config)
